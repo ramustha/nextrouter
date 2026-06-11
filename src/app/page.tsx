@@ -41,6 +41,7 @@ interface CostAnalytics {
 }
 
 interface SystemStatus {
+  workspacePath: string;
   watcher: { running: boolean };
   daemon: { running: boolean; pid: number | null; activeAIProcesses: string[] };
   mcp: { configuredInClaude: boolean; configuredInCursor: boolean };
@@ -59,7 +60,7 @@ export default function DashboardPage() {
 
   async function loadData() {
     try {
-      const pRes = await fetch('/api/providers');
+      const pRes = await fetch(`/api/providers?workspacePath=${encodeURIComponent(workspacePath)}`);
       if (pRes.ok) setProviders(await pRes.json());
 
       const mRes = await fetch(`/api/context?workspacePath=${encodeURIComponent(workspacePath)}`);
@@ -72,20 +73,25 @@ export default function DashboardPage() {
       if (cRes.ok) setCostAnalytics(await cRes.json());
 
       const sysRes = await fetch('/api/system');
-      if (sysRes.ok) setSystemStatus(await sysRes.json());
+      if (sysRes.ok) {
+        const sysData = await sysRes.json();
+        setSystemStatus(sysData);
+        if (sysData.workspacePath && !workspacePath) {
+          setWorkspacePath(sysData.workspacePath);
+        }
+      }
     } catch (e) {
       console.error('Error loading dashboard data:', e);
     }
   }
 
   useEffect(() => {
-    setWorkspacePath(window.location.pathname || '');
     loadData();
     
     // Poll system and provider statuses every 5 seconds
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [workspacePath]);
 
   async function handleScan() {
     setScanning(true);

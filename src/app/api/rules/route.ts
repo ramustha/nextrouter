@@ -5,7 +5,10 @@ import crypto from 'crypto';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const workspacePath = searchParams.get('workspacePath') || process.cwd();
+  let workspacePath = searchParams.get('workspacePath') || '';
+  if (!workspacePath || workspacePath === '/') {
+    workspacePath = process.cwd();
+  }
 
   // Pull latest rule configurations from provider files into database
   await pullRules(workspacePath);
@@ -46,7 +49,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const workspacePath = body.workspacePath || process.cwd();
+  let workspacePath = body.workspacePath || '';
+  if (!workspacePath || workspacePath === '/') {
+    workspacePath = process.cwd();
+  }
   const { action, rules } = body;
 
   const db = getDatabase();

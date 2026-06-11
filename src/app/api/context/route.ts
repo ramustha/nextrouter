@@ -6,7 +6,10 @@ import { triggerSystemNotification } from '@/notifications/alerts';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const workspacePath = searchParams.get('workspacePath') || process.cwd();
+  let workspacePath = searchParams.get('workspacePath') || '';
+  if (!workspacePath || workspacePath === '/') {
+    workspacePath = process.cwd();
+  }
 
   const activeProviders = await detectActiveProviders(workspacePath);
   const metrics: Record<string, any> = {};

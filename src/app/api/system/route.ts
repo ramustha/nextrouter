@@ -58,6 +58,7 @@ export async function GET() {
     const activeAI = getActiveAIProcesses();
 
     return NextResponse.json({
+      workspacePath: process.cwd(),
       watcher: {
         running: isWatcherActive
       },

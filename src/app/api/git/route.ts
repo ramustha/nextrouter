@@ -4,7 +4,10 @@ import { getGitStatus, getFileDiff } from '@/git/git-helper';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const workspacePath = searchParams.get('workspacePath') || process.cwd();
+    let workspacePath = searchParams.get('workspacePath') || '';
+    if (!workspacePath || workspacePath === '/') {
+      workspacePath = process.cwd();
+    }
     const action = searchParams.get('action') || 'status';
 
     if (action === 'diff') {
