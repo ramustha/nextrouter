@@ -5,6 +5,54 @@ import crypto from 'crypto';
 import os from 'os';
 import { getEncoding } from 'js-tiktoken';
 
+function findWorkspaceRoot(filePath: string): string | null {
+  try {
+    let currentDir = filePath;
+    if (fs.existsSync(currentDir) && !fs.statSync(currentDir).isDirectory()) {
+      currentDir = path.dirname(currentDir);
+    }
+    const root = path.parse(currentDir).root;
+    while (currentDir && currentDir !== root) {
+      if (
+        fs.existsSync(path.join(currentDir, 'package.json')) ||
+        fs.existsSync(path.join(currentDir, '.git')) ||
+        fs.existsSync(path.join(currentDir, 'CLAUDE.md')) ||
+        fs.existsSync(path.join(currentDir, '.cursorrules')) ||
+        fs.existsSync(path.join(currentDir, '.claude'))
+      ) {
+        return currentDir;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+  } catch (e) {
+    // Ignore filesystem errors and fallback to string parsing
+  }
+
+  // Fallback: heuristic path parsing
+  const homedir = os.homedir();
+  if (filePath.startsWith(homedir)) {
+    const relative = path.relative(homedir, filePath);
+    const segments = relative.split(path.sep);
+    if (segments[0] === 'Work') {
+      if (segments.length >= 3) {
+        if (['growth', 'payment', 'personal'].includes(segments[1])) {
+          if (segments[1] === 'growth' && ['traffic', 'seo', 'affiliate'].includes(segments[2])) {
+            return path.join(homedir, 'Work', segments[1], segments[2], segments[3] || '');
+          }
+          return path.join(homedir, 'Work', segments[1], segments[2] || '');
+        }
+        return path.join(homedir, 'Work', segments[1] || '');
+      }
+    }
+    if (segments.length >= 2) {
+      return path.join(homedir, segments[0], segments[1]);
+    } else if (segments.length === 1) {
+      return path.join(homedir, segments[0]);
+    }
+  }
+  return null;
+}
+
 export class AntigravityAdapter implements ProviderAdapter {
   id = 'antigravity';
   name = 'Antigravity';
@@ -82,9 +130,37 @@ export class AntigravityAdapter implements ProviderAdapter {
           let lastActiveAt = startedAt;
           let title = 'New Antigravity Session';
           let tokenCount = 0;
+          let sessionWorkspacePath = '';
 
           for (const line of lines) {
             const step = JSON.parse(line);
+            
+            if (step.cwd && typeof step.cwd === 'string') {
+              sessionWorkspacePath = step.cwd;
+            } else if (step.workspaceUris && Array.isArray(step.workspaceUris) && step.workspaceUris.length > 0) {
+              const uri = step.workspaceUris[0];
+              if (uri.startsWith('file://')) {
+                sessionWorkspacePath = decodeURIComponent(uri.replace(/^file:\/\//, ''));
+              }
+            } else if (step.tool_calls && Array.isArray(step.tool_calls)) {
+              for (const call of step.tool_calls) {
+                if (call.args) {
+                  try {
+                    const args = typeof call.args === 'string' ? JSON.parse(call.args) : call.args;
+                    const pathVal = args.DirectoryPath || args.AbsolutePath || args.Cwd || args.cwd || '';
+                    if (pathVal && typeof pathVal === 'string') {
+                      const cleanPath = pathVal.replace(/^"|"$/g, '');
+                      if (cleanPath.startsWith('/')) {
+                        sessionWorkspacePath = cleanPath;
+                      }
+                    }
+                  } catch (e) {
+                    // Ignore JSON parse errors in args
+                  }
+                }
+              }
+            }
+
             if (step.created_at) {
               lastActiveAt = step.created_at;
               if (messages.length === 0) startedAt = step.created_at;
@@ -116,6 +192,39 @@ export class AntigravityAdapter implements ProviderAdapter {
             }
           }
 
+          if (sessionWorkspacePath) {
+            const root = findWorkspaceRoot(sessionWorkspacePath);
+            if (root) {
+              sessionWorkspacePath = root;
+            }
+          }
+
+          if (!sessionWorkspacePath) {
+            const mdFiles = ['implementation_plan.md', 'task.md', 'walkthrough.md'];
+            for (const file of mdFiles) {
+              const filePath = path.join(sessionPath, file);
+              if (fs.existsSync(filePath)) {
+                try {
+                  const content = fs.readFileSync(filePath, 'utf8');
+                  const homedir = os.homedir();
+                  const escapedHomedir = homedir.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                  const regex = new RegExp('file://(' + escapedHomedir + '[^\\s\\n)]+)');
+                  const match = content.match(regex);
+                  if (match) {
+                    const cleanPath = decodeURIComponent(match[1]);
+                    const root = findWorkspaceRoot(cleanPath);
+                    if (root) {
+                      sessionWorkspacePath = root;
+                      break;
+                    }
+                  }
+                } catch (e) {
+                  // Ignore errors
+                }
+              }
+            }
+          }
+
           if (messages.length > 0) {
             sessions.push({
               id: folder,
@@ -124,7 +233,8 @@ export class AntigravityAdapter implements ProviderAdapter {
               lastActiveAt,
               status: 'active',
               tokenCount,
-              messages
+              messages,
+              workspacePath: sessionWorkspacePath || undefined
             });
           }
         } catch (err) {
@@ -153,7 +263,8 @@ export class AntigravityAdapter implements ProviderAdapter {
     return {
       totalTokens,
       totalFiles: 0,
-      budgetUsedPercent: percent
+      budgetUsedPercent: percent,
+      contextWindowLimit: limit
     };
   }
 

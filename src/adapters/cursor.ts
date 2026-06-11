@@ -6,6 +6,54 @@ import os from 'os';
 import { execSync } from 'child_process';
 import { getEncoding } from 'js-tiktoken';
 
+function findWorkspaceRoot(filePath: string): string | null {
+  try {
+    let currentDir = filePath;
+    if (fs.existsSync(currentDir) && !fs.statSync(currentDir).isDirectory()) {
+      currentDir = path.dirname(currentDir);
+    }
+    const root = path.parse(currentDir).root;
+    while (currentDir && currentDir !== root) {
+      if (
+        fs.existsSync(path.join(currentDir, 'package.json')) ||
+        fs.existsSync(path.join(currentDir, '.git')) ||
+        fs.existsSync(path.join(currentDir, 'CLAUDE.md')) ||
+        fs.existsSync(path.join(currentDir, '.cursorrules')) ||
+        fs.existsSync(path.join(currentDir, '.claude'))
+      ) {
+        return currentDir;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+  } catch (e) {
+    // Ignore filesystem errors and fallback to string parsing
+  }
+
+  // Fallback: heuristic path parsing
+  const homedir = os.homedir();
+  if (filePath.startsWith(homedir)) {
+    const relative = path.relative(homedir, filePath);
+    const segments = relative.split(path.sep);
+    if (segments[0] === 'Work') {
+      if (segments.length >= 3) {
+        if (['growth', 'payment', 'personal'].includes(segments[1])) {
+          if (segments[1] === 'growth' && ['traffic', 'seo', 'affiliate'].includes(segments[2])) {
+            return path.join(homedir, 'Work', segments[1], segments[2], segments[3] || '');
+          }
+          return path.join(homedir, 'Work', segments[1], segments[2] || '');
+        }
+        return path.join(homedir, 'Work', segments[1] || '');
+      }
+    }
+    if (segments.length >= 2) {
+      return path.join(homedir, segments[0], segments[1]);
+    } else if (segments.length === 1) {
+      return path.join(homedir, segments[0]);
+    }
+  }
+  return null;
+}
+
 export class CursorAdapter implements ProviderAdapter {
   id = 'cursor';
   name = 'Cursor';
@@ -96,116 +144,202 @@ export class CursorAdapter implements ProviderAdapter {
     }
   }
 
-  private findWorkspaceStoragePath(workspacePath: string): string | null {
-    const userDir = this.getUserDataDir();
-    const storageDir = path.join(userDir, 'workspaceStorage');
-    if (!fs.existsSync(storageDir)) return null;
+  private getWorkspacePathsMap(): Record<string, string> {
+    const map: Record<string, string> = {};
+    const globalDbPath = path.join(this.getUserDataDir(), 'globalStorage', 'state.vscdb');
+    if (!fs.existsSync(globalDbPath)) return map;
 
     try {
-      const folders = fs.readdirSync(storageDir);
-      for (const folder of folders) {
-        const workspaceJsonPath = path.join(storageDir, folder, 'workspace.json');
-        if (fs.existsSync(workspaceJsonPath)) {
-          const workspaceJson = JSON.parse(fs.readFileSync(workspaceJsonPath, 'utf8'));
-          const folderUri = workspaceJson.folder || '';
-          const resolvedUriPath = decodeURIComponent(folderUri.replace(/^file:\/\//, ''));
-          
-          if (path.resolve(resolvedUriPath) === path.resolve(workspacePath)) {
-            return path.join(storageDir, folder);
+      const query = `SELECT value FROM itemTable WHERE key = 'history.recentlyOpenedPathsList';`;
+      const cmd = `sqlite3 "${globalDbPath}" "${query}"`;
+      const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      if (output) {
+        const parsed = JSON.parse(output);
+        if (parsed && Array.isArray(parsed.entries)) {
+          for (const entry of parsed.entries) {
+            const uri = entry.folderUri || entry.fileUri || '';
+            if (uri.startsWith('file://')) {
+              const decodedPath = decodeURIComponent(uri.replace(/^file:\/\//, ''));
+              const md5 = crypto.createHash('md5').update(decodedPath).digest('hex');
+              map[md5] = decodedPath;
+            }
           }
         }
       }
     } catch (e) {
-      console.error('Error searching Cursor workspaceStorage:', e);
+      console.error('Error resolving workspace paths map:', e);
     }
-    return null;
+    return map;
+  }
+
+  private getChatsDir(): string {
+    return path.join(os.homedir(), '.cursor', 'chats');
   }
 
   async getSessions(workspacePath: string): Promise<Session[]> {
-    const storagePath = this.findWorkspaceStoragePath(workspacePath);
-    if (!storagePath) return [];
-
-    const dbPath = path.join(storagePath, 'state.vscdb');
-    if (!fs.existsSync(dbPath)) return [];
+    const chatsDir = this.getChatsDir();
+    if (!fs.existsSync(chatsDir)) return [];
 
     const sessions: Session[] = [];
-    let enc;
+    const pathsMap = this.getWorkspacePathsMap();
+    
+    // Pre-populate with current workspace path to be sure it resolves
+    const currentWorkspaceMd5 = crypto.createHash('md5').update(path.resolve(workspacePath)).digest('hex');
+    pathsMap[currentWorkspaceMd5] = path.resolve(workspacePath);
+
+    let enc: any;
     try {
       enc = getEncoding('cl100k_base');
     } catch (e) {
-      console.error('Tiktoken load error, falling back to approximation:', e);
+      // Fallback
     }
 
     try {
-      // Query the database using system command line tool sqlite3 (which is guaranteed to exist on macOS/Linux)
-      // On Windows, if sqlite3 CLI isn't installed, this will fallback gracefully.
-      const query = `SELECT key, value FROM itemTable WHERE key LIKE '%composer%' OR key LIKE '%chat%';`;
-      const cmd = `sqlite3 "${dbPath}" "${query}"`;
-      const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-      
-      const lines = output.split('\n');
-      for (const line of lines) {
-        if (!line.includes('|')) continue;
-        const dividerIdx = line.indexOf('|');
-        const key = line.substring(0, dividerIdx);
-        const val = line.substring(dividerIdx + 1);
+      const workspaceHashes = fs.readdirSync(chatsDir);
+      for (const workspaceHash of workspaceHashes) {
+        if (workspaceHash === '.DS_Store') continue;
+        const hashPath = path.join(chatsDir, workspaceHash);
+        if (!fs.statSync(hashPath).isDirectory()) continue;
 
-        // We are interested in composerData or chat state keys
-        if (key.includes('composer.composerData') || key.includes('composerData') || key.includes('workbench.panel.chat.state')) {
-          try {
-            const data = JSON.parse(val);
-            // Parse Composer sessions
-            if (data && Array.isArray(data.composers)) {
-              for (const comp of data.composers) {
-                if (!comp.conversation || !Array.isArray(comp.conversation.bubbles)) continue;
-                
-                const messages: Message[] = [];
-                let startedAt = comp.createdAt ? new Date(comp.createdAt).toISOString() : new Date().toISOString();
-                let lastActiveAt = comp.updatedAt ? new Date(comp.updatedAt).toISOString() : startedAt;
-                let title = comp.name || 'Cursor Composer Session';
-                let tokenCount = 0;
-
-                for (const bubble of comp.conversation.bubbles) {
-                  const role = bubble.type === 'ai' ? 'assistant' : 'user';
-                  const text = bubble.text || '';
-                  if (!text) continue;
-
-                  const tokens = enc ? enc.encode(text).length : Math.ceil(text.split(/\s+/).length * 1.3);
-                  tokenCount += tokens;
-
-                  messages.push({
-                    role,
-                    content: text,
-                    timestamp: bubble.createdAt ? new Date(bubble.createdAt).toISOString() : undefined,
-                    tokens
-                  });
+        let resolvedWorkspacePath = pathsMap[workspaceHash] || '';
+        if (!resolvedWorkspacePath) {
+          const sessionUuids = fs.readdirSync(hashPath);
+          for (const uuid of sessionUuids) {
+            if (uuid === '.DS_Store') continue;
+            const dbPath = path.join(hashPath, uuid, 'store.db');
+            if (fs.existsSync(dbPath)) {
+              try {
+                const metaQuery = `SELECT value FROM meta;`;
+                const metaHex = execSync(`sqlite3 "${dbPath}" "${metaQuery}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+                if (metaHex) {
+                  const meta = JSON.parse(Buffer.from(metaHex, 'hex').toString('utf8'));
+                  if (meta.currentPlanUri && typeof meta.currentPlanUri === 'string') {
+                    const cleanPath = decodeURIComponent(meta.currentPlanUri.replace(/^file:\/\//, ''));
+                    const root = findWorkspaceRoot(cleanPath);
+                    if (root) {
+                      resolvedWorkspacePath = root;
+                      pathsMap[workspaceHash] = root;
+                      break;
+                    }
+                  }
                 }
+                
+                const blobsQuery = `SELECT hex(data) FROM blobs ORDER BY rowid;`;
+                const blobsHex = execSync(`sqlite3 "${dbPath}" "${blobsQuery}"`, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+                const lines = blobsHex.split('\n').filter(l => l.trim() !== '');
+                for (const line of lines) {
+                  const text = Buffer.from(line, 'hex').toString('utf8');
+                  if (text.startsWith('{"role":')) {
+                    const obj = JSON.parse(text);
+                    if (obj.role === 'user' && typeof obj.content === 'string') {
+                      const match = obj.content.match(/Workspace Path:\s*([^\n]+)/);
+                      if (match) {
+                        const root = findWorkspaceRoot(match[1].trim());
+                        if (root) {
+                          resolvedWorkspacePath = root;
+                          pathsMap[workspaceHash] = root;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+                if (resolvedWorkspacePath) break;
+              } catch (e) {
+                // Ignore errors
+              }
+            }
+          }
+        }
 
-                if (messages.length > 0) {
-                  sessions.push({
-                    id: comp.composerId || crypto.randomUUID(),
-                    title,
-                    startedAt,
-                    lastActiveAt,
-                    status: 'active',
-                    tokenCount,
-                    messages
-                  });
+        const workspaceName = resolvedWorkspacePath ? path.basename(resolvedWorkspacePath) : `Workspace-${workspaceHash.substring(0, 6)}`;
+
+        const sessionUuids = fs.readdirSync(hashPath);
+        for (const uuid of sessionUuids) {
+          if (uuid === '.DS_Store') continue;
+          const sessionPath = path.join(hashPath, uuid);
+          if (!fs.statSync(sessionPath).isDirectory()) continue;
+
+          const dbPath = path.join(sessionPath, 'store.db');
+          if (!fs.existsSync(dbPath)) continue;
+
+          try {
+            // Read meta table
+            const metaQuery = `SELECT value FROM meta;`;
+            const metaCmd = `sqlite3 "${dbPath}" "${metaQuery}"`;
+            const metaHex = execSync(metaCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+            if (!metaHex) continue;
+
+            const metaJson = Buffer.from(metaHex, 'hex').toString('utf8');
+            const meta = JSON.parse(metaJson);
+
+            // Read blobs table ordered by rowid
+            const blobsQuery = `SELECT hex(data) FROM blobs ORDER BY rowid;`;
+            const blobsCmd = `sqlite3 "${dbPath}" "${blobsQuery}"`;
+            const blobsHex = execSync(blobsCmd, { encoding: 'utf8', maxBuffer: 15 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+            
+            const lines = blobsHex.split('\n').filter(l => l.trim() !== '');
+            const messages: Message[] = [];
+            let tokenCount = 0;
+
+            const stats = fs.statSync(dbPath);
+            const lastActiveAt = stats.mtime.toISOString();
+            const startedAt = meta.createdAt ? new Date(meta.createdAt).toISOString() : lastActiveAt;
+
+            for (const line of lines) {
+              const buffer = Buffer.from(line, 'hex');
+              const text = buffer.toString('utf8');
+              
+              if (text.startsWith('{"role":')) {
+                try {
+                  const obj = JSON.parse(text);
+                  if (obj.role === 'user' || obj.role === 'assistant') {
+                    let contentText = '';
+                    if (typeof obj.content === 'string') {
+                      contentText = obj.content;
+                    } else if (Array.isArray(obj.content)) {
+                      contentText = obj.content.map((c: any) => c.text || '').join('');
+                    }
+
+                    if (contentText) {
+                      const tokens = enc ? enc.encode(contentText).length : Math.ceil(contentText.split(/\s+/).length * 1.3);
+                      tokenCount += tokens;
+
+                      messages.push({
+                        role: obj.role,
+                        content: contentText,
+                        tokens
+                      });
+                    }
+                  }
+                } catch (e) {
+                  // Ignore JSON parse errors
                 }
               }
             }
+
+            if (messages.length > 0) {
+              const title = `[${workspaceName}] ${meta.name || 'Cursor Session'}`;
+              sessions.push({
+                id: uuid,
+                title,
+                startedAt,
+                lastActiveAt,
+                status: 'active',
+                tokenCount,
+                messages,
+                workspacePath: resolvedWorkspacePath || undefined
+              });
+            }
           } catch (e) {
-            // JSON parse error for this specific row, skip
+            // Ignore individual session errors
           }
         }
       }
     } catch (e) {
-      console.error('Failed to read Cursor sqlite DB via CLI:', e);
+      console.error('Error reading Cursor chats:', e);
     }
 
-    // No free needed for js-tiktoken
-
-    // Sort by last active desc
     return sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
   }
 
@@ -220,7 +354,8 @@ export class CursorAdapter implements ProviderAdapter {
     return {
       totalTokens,
       totalFiles: 0,
-      budgetUsedPercent: percent
+      budgetUsedPercent: percent,
+      contextWindowLimit: limit
     };
   }
 

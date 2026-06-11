@@ -6,7 +6,16 @@ import { getBudgetAnalysis } from '../engine/tokenizer';
 
 async function main() {
   const args = process.argv.slice(2);
-  const command = args[0];
+  let command = args[0];
+
+  // Resolve Slash Command and alternate aliases
+  if (command === '/sync') command = 'sync';
+  if (command === '/handover' || command === '/handoff' || command === 'handoff') command = 'handover';
+  if (command === '/tokens') command = 'tokens';
+  if (command === '/daemon') command = 'daemon';
+  if (command === '/status') command = 'status';
+  if (command === '/prune') command = 'prune';
+  if (command === '/help') command = 'help';
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     printHelp();
@@ -112,6 +121,57 @@ async function main() {
         break;
       }
 
+      case 'prune': {
+        const filepath = args[1];
+        const writeFlag = args[2] === '--write' || args[2] === '-w';
+
+        if (!filepath) {
+          console.error('Error: Missing filepath. Usage: nextrouter prune <filepath> [--write]');
+          process.exit(1);
+        }
+
+        const fs = await import('fs');
+        const path = await import('path');
+        const { compressCode } = await import('../engine/compressor');
+        const { countTokens } = await import('../engine/tokenizer');
+
+        const absolutePath = path.resolve(filepath);
+        if (!fs.existsSync(absolutePath)) {
+          console.error(`Error: File does not exist at path: ${absolutePath}`);
+          process.exit(1);
+        }
+
+        const stats = fs.statSync(absolutePath);
+        if (stats.isDirectory()) {
+          console.error(`Error: Path is a directory: ${absolutePath}`);
+          process.exit(1);
+        }
+
+        const content = fs.readFileSync(absolutePath, 'utf8');
+        const filename = path.basename(absolutePath);
+        const originalTokens = countTokens(content);
+
+        const prunedContent = compressCode(filename, content);
+        const prunedTokens = countTokens(prunedContent);
+        const savedPercent = originalTokens > 0 
+          ? Math.round(((originalTokens - prunedTokens) / originalTokens) * 100) 
+          : 0;
+
+        console.log('\n--- Pruned Output Code ---');
+        console.log(prunedContent);
+        console.log('--------------------------');
+        console.log(`\nOriginal Tokens: ${originalTokens.toLocaleString()}`);
+        console.log(`Pruned Tokens:   ${prunedTokens.toLocaleString()}`);
+        console.log(`Token Savings:   ${savedPercent}% saved (${(originalTokens - prunedTokens).toLocaleString()} tokens)`);
+
+        if (writeFlag) {
+          fs.writeFileSync(absolutePath, prunedContent, 'utf8');
+          console.log(`\n✓ Successfully overwrote and updated file in place: ${filepath}`);
+        }
+        console.log('');
+        break;
+      }
+
       default:
         console.error(`Unknown command: ${command}`);
         printHelp();
@@ -136,7 +196,11 @@ Commands:
   handover <from> [to] Generate handover context from provider's latest session
   tokens               Display current token usage metrics against model windows
   daemon [start|stop]  Manage background auto-sync worker daemon
+  prune <file> [--write] Strip implementation details from Javascript, Typescript, or Python file
   help                 Show this help details
+
+Slash Commands:
+  /status, /sync, /handoff, /tokens, /daemon, /prune, /help
 `);
 }
 

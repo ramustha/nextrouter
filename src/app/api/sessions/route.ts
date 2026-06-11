@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/store/database';
-import { detectActiveProviders } from '@/adapters/registry';
+import { detectActiveProviders, adapters } from '@/adapters/registry';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const workspacePath = searchParams.get('workspacePath') || process.cwd();
   
   const db = getDatabase();
-  const activeProviders = await detectActiveProviders(workspacePath);
 
   // Sync sessions from active provider logs into DB
-  for (const provider of activeProviders) {
+  for (const provider of adapters) {
     try {
       const sessions = await provider.getSessions(workspacePath);
       for (const s of sessions) {
@@ -22,7 +21,8 @@ export async function GET(request: Request) {
           last_active_at: s.lastActiveAt,
           status: s.status,
           token_count: s.tokenCount,
-          messages: s.messages
+          messages: s.messages,
+          workspace_path: s.workspacePath
         });
       }
     } catch (e) {

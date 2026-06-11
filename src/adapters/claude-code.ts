@@ -5,6 +5,54 @@ import crypto from 'crypto';
 import os from 'os';
 import { getEncoding } from 'js-tiktoken';
 
+function findWorkspaceRoot(filePath: string): string | null {
+  try {
+    let currentDir = filePath;
+    if (fs.existsSync(currentDir) && !fs.statSync(currentDir).isDirectory()) {
+      currentDir = path.dirname(currentDir);
+    }
+    const root = path.parse(currentDir).root;
+    while (currentDir && currentDir !== root) {
+      if (
+        fs.existsSync(path.join(currentDir, 'package.json')) ||
+        fs.existsSync(path.join(currentDir, '.git')) ||
+        fs.existsSync(path.join(currentDir, 'CLAUDE.md')) ||
+        fs.existsSync(path.join(currentDir, '.cursorrules')) ||
+        fs.existsSync(path.join(currentDir, '.claude'))
+      ) {
+        return currentDir;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+  } catch (e) {
+    // Ignore filesystem errors and fallback to string parsing
+  }
+
+  // Fallback: heuristic path parsing
+  const homedir = os.homedir();
+  if (filePath.startsWith(homedir)) {
+    const relative = path.relative(homedir, filePath);
+    const segments = relative.split(path.sep);
+    if (segments[0] === 'Work') {
+      if (segments.length >= 3) {
+        if (['growth', 'payment', 'personal'].includes(segments[1])) {
+          if (segments[1] === 'growth' && ['traffic', 'seo', 'affiliate'].includes(segments[2])) {
+            return path.join(homedir, 'Work', segments[1], segments[2], segments[3] || '');
+          }
+          return path.join(homedir, 'Work', segments[1], segments[2] || '');
+        }
+        return path.join(homedir, 'Work', segments[1] || '');
+      }
+    }
+    if (segments.length >= 2) {
+      return path.join(homedir, segments[0], segments[1]);
+    } else if (segments.length === 1) {
+      return path.join(homedir, segments[0]);
+    }
+  }
+  return null;
+}
+
 export class ClaudeCodeAdapter implements ProviderAdapter {
   id = 'claude-code';
   name = 'Claude Code';
@@ -108,27 +156,29 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
         const projectPath = path.join(projectsDir, projectHash);
         if (!fs.statSync(projectPath).isDirectory()) continue;
 
-        // Check if this project hash corresponds to the current workspacePath
-        // Claude Code hashes project path. We can verify if the workspace path matches or just load all project sessions for ease of debugging.
-        // Let's load sessions for all projects but label them, or filter if we can resolve the path.
-        // Inside ~/.claude/projects/<hash>/metadata.json there is often a project path.
-        let isCurrentProject = true;
+        let projectName = '';
         const metadataPath = path.join(projectPath, 'metadata.json');
         if (fs.existsSync(metadataPath)) {
           try {
             const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-            if (meta.path && path.resolve(meta.path) !== path.resolve(workspacePath)) {
-              isCurrentProject = false;
+            if (meta.path) {
+              projectName = path.basename(meta.path);
             }
           } catch (e) {
-            // Ignore metadata read errors, process anyway
+            // Ignore metadata read errors
           }
         }
 
-        if (!isCurrentProject) continue;
+        if (!projectName) {
+          // Fallback to projectHash which is the folder name, e.g. "-Users-username-Work-project"
+          const parts = projectHash.split('-');
+          projectName = parts[parts.length - 1] || projectHash;
+        }
 
-        const sessionsDir = path.join(projectPath, 'sessions');
-        if (!fs.existsSync(sessionsDir)) continue;
+        let sessionsDir = path.join(projectPath, 'sessions');
+        if (!fs.existsSync(sessionsDir)) {
+          sessionsDir = projectPath;
+        }
 
         const sessionFiles = fs.readdirSync(sessionsDir);
         for (const file of sessionFiles) {
@@ -141,18 +191,53 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
             const messages: Message[] = [];
             let startedAt = new Date().toISOString();
             let lastActiveAt = startedAt;
-            let title = 'Claude Code Session';
+            let title = projectName ? `[${projectName}] Claude Code Session` : 'Claude Code Session';
             let tokenCount = 0;
+            let sessionWorkspacePath = '';
 
             for (const line of lines) {
               const obj = JSON.parse(line);
               
-              // Standard formats for Claude Code logs
-              const role = obj.role || (obj.message && obj.message.role);
-              const text = obj.content || obj.text || (obj.message && obj.message.content);
-              const time = obj.timestamp || obj.time || new Date().toISOString();
+              if (obj.cwd && typeof obj.cwd === 'string') {
+                sessionWorkspacePath = obj.cwd;
+              }
 
-              if (role && text) {
+              if (obj.isMeta) continue;
+
+              const role = obj.type === 'user' || obj.type === 'assistant' 
+                ? obj.type 
+                : (obj.role || (obj.message && obj.message.role));
+              
+              let text = '';
+              const rawContent = obj.content || obj.text || (obj.message && obj.message.content);
+              if (typeof rawContent === 'string') {
+                text = rawContent;
+              } else if (Array.isArray(rawContent)) {
+                const textParts: string[] = [];
+                for (const part of rawContent) {
+                  if (part && typeof part === 'object') {
+                    if (part.type === 'text' && typeof part.text === 'string') {
+                      textParts.push(part.text);
+                    }
+                  }
+                }
+                text = textParts.join('');
+              }
+
+              if (text) {
+                // Filter out local terminal commands stdout/stderr and meta lines to keep chat tidy
+                const trimmed = text.trim();
+                if (trimmed.startsWith('<local-command-stdout>') || 
+                    trimmed.startsWith('<local-command-stderr>') || 
+                    trimmed.startsWith('<command-name>') ||
+                    trimmed.startsWith('<command-message>') ||
+                    trimmed.startsWith('<command-args>') ||
+                    trimmed.startsWith('<command-status>') ||
+                    trimmed.startsWith('<local-command-caveat>')) {
+                  continue;
+                }
+
+                const time = obj.timestamp || obj.time || new Date().toISOString();
                 lastActiveAt = time;
                 if (messages.length === 0) startedAt = time;
 
@@ -160,7 +245,8 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
                 tokenCount += tokens;
 
                 if (messages.length === 0 && role === 'user') {
-                  title = text.split('\n')[0].substring(0, 50) + (text.length > 50 ? '...' : '');
+                  const baseTitle = text.split('\n')[0].substring(0, 50) + (text.length > 50 ? '...' : '');
+                  title = projectName ? `[${projectName}] ${baseTitle}` : baseTitle;
                 }
 
                 messages.push({
@@ -172,6 +258,13 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
               }
             }
 
+            if (sessionWorkspacePath) {
+              const root = findWorkspaceRoot(sessionWorkspacePath);
+              if (root) {
+                sessionWorkspacePath = root;
+              }
+            }
+
             if (messages.length > 0) {
               sessions.push({
                 id: path.basename(file, '.jsonl'),
@@ -180,7 +273,8 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
                 lastActiveAt,
                 status: 'active',
                 tokenCount,
-                messages
+                messages,
+                workspacePath: sessionWorkspacePath || undefined
               });
             }
           } catch (err) {
@@ -192,9 +286,6 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       console.error('Error reading Claude Code projects:', e);
     }
 
-    // No free needed for js-tiktoken
-
-    // Sort by last active desc
     return sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
   }
 
@@ -209,7 +300,8 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
     return {
       totalTokens,
       totalFiles: 0,
-      budgetUsedPercent: percent
+      budgetUsedPercent: percent,
+      contextWindowLimit: limit
     };
   }
 

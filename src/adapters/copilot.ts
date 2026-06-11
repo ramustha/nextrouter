@@ -48,7 +48,8 @@ export class CopilotAdapter implements ProviderAdapter {
     return {
       totalTokens: 0,
       totalFiles: 0,
-      budgetUsedPercent: 0
+      budgetUsedPercent: 0,
+      contextWindowLimit: 0
     };
   }
 

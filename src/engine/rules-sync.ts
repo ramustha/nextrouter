@@ -1,8 +1,9 @@
 import { RuleFile } from '../adapters/types';
-import { detectActiveProviders, getAdapter } from '../adapters/registry';
+import { detectActiveProviders } from '../adapters/registry';
 import { getDatabase, RuleRow } from '../store/database';
 import { loadWorkspaceSkills } from '../skills/loader';
-import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 export async function pullRules(workspacePath: string): Promise<RuleFile[]> {
   const db = getDatabase();
@@ -13,9 +14,10 @@ export async function pullRules(workspacePath: string): Promise<RuleFile[]> {
     try {
       const providerRules = await provider.getRules(workspacePath);
       for (const rule of providerRules) {
-        // Strip out any previously appended skills blocks to preserve base content clean
+        // Strip out any previously appended skills or plan blocks to preserve base content clean
         const cleanContent = rule.content
           .replace(/<!-- NEXTROUTER_SKILLS_START -->[\s\S]*<!-- NEXTROUTER_SKILLS_END -->/, '')
+          .replace(/<!-- NEXTROUTER_PLAN_START -->[\s\S]*<!-- NEXTROUTER_PLAN_END -->/, '')
           .trim();
 
         // Upsert into local database
@@ -59,6 +61,9 @@ export async function pushRules(workspacePath: string): Promise<void> {
     ].join('\n');
   }
 
+  // Load active plan block (plan.md or implementation_plan.md)
+  const planAppendText = loadPlanBlock(workspacePath);
+
   // Group rules in DB by provider
   const allDbRules = db.rules.all();
 
@@ -69,7 +74,7 @@ export async function pushRules(workspacePath: string): Promise<void> {
     const rulesToSync: RuleFile[] = providerRules.map(r => ({
       id: r.id,
       filename: r.filename,
-      content: r.content + skillsAppendText,
+      content: r.content + planAppendText + skillsAppendText,
       lastUpdatedAt: r.last_updated_at,
       hash: r.hash
     }));
@@ -102,4 +107,30 @@ export function mergeRules(rules: RuleRow[]): string {
   }
 
   return sections.join('\n');
+}
+
+/**
+ * Reads any active plan file in the workspace
+ */
+function loadPlanBlock(workspacePath: string): string {
+  const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
+  for (const name of possibleNames) {
+    const filePath = path.join(workspacePath, name);
+    if (fs.existsSync(filePath)) {
+      try {
+        const planContent = fs.readFileSync(filePath, 'utf8').trim();
+        if (planContent) {
+          return [
+            '\n\n<!-- NEXTROUTER_PLAN_START -->',
+            '## 🎯 Workspace Active Plan',
+            planContent,
+            '<!-- NEXTROUTER_PLAN_END -->'
+          ].join('\n');
+        }
+      } catch (err) {
+        console.error(`Failed to read plan file ${name}:`, err);
+      }
+    }
+  }
+  return '';
 }

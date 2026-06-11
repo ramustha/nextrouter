@@ -21,6 +21,7 @@ export interface Session {
   status: 'active' | 'archived';
   tokenCount: number;
   messages: Message[];
+  workspacePath?: string;
 }
 
 export interface ContextMetrics {
@@ -28,6 +29,7 @@ export interface ContextMetrics {
   totalFiles: number;
   filesSizeLimit?: number;
   budgetUsedPercent: number; // percentage of target context window
+  contextWindowLimit?: number; // total context window limit size
 }
 
 export interface HandoverPacket {

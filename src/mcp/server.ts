@@ -84,6 +84,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ['workspacePath']
         }
+      },
+      {
+        name: 'prune_code',
+        description: 'Strip implementation details (function/class bodies) from Javascript, Typescript, or Python code to save context space.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filepath: { type: 'string', description: 'Relative or absolute path of the file to prune' },
+            write: { type: 'boolean', description: 'If true, overwrites the file in place. If false, only returns the pruned outline.' }
+          },
+          required: ['filepath']
+        }
+      },
+      {
+        name: 'get_active_plan',
+        description: 'Read the active workspace plan (from plan.md or implementation_plan.md) in the current directory.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            workspacePath: { type: 'string', description: 'Absolute path to workspace directory' }
+          },
+          required: ['workspacePath']
+        }
       }
     ]
   };
@@ -209,6 +232,90 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'prune_code': {
+        const { filepath, write = false } = args as any;
+        const fs = await import('fs');
+        const path = await import('path');
+        const { compressCode } = await import('../engine/compressor');
+        const { countTokens } = await import('../engine/tokenizer');
+
+        const absolutePath = path.resolve(filepath);
+        if (!fs.existsSync(absolutePath)) {
+          throw new McpError(ErrorCode.InvalidRequest, `File not found at: ${absolutePath}`);
+        }
+
+        const stats = fs.statSync(absolutePath);
+        if (stats.isDirectory()) {
+          throw new McpError(ErrorCode.InvalidRequest, `Path is a directory, not a file: ${absolutePath}`);
+        }
+
+        const content = fs.readFileSync(absolutePath, 'utf8');
+        const filename = path.basename(absolutePath);
+        const originalTokens = countTokens(content);
+
+        const prunedContent = compressCode(filename, content);
+        const prunedTokens = countTokens(prunedContent);
+        const savedPercent = originalTokens > 0 
+          ? Math.round(((originalTokens - prunedTokens) / originalTokens) * 100) 
+          : 0;
+
+        if (write) {
+          fs.writeFileSync(absolutePath, prunedContent, 'utf8');
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                filePath: absolutePath,
+                originalTokens,
+                prunedTokens,
+                savedTokens: originalTokens - prunedTokens,
+                savedPercent,
+                wasWritten: write,
+                prunedContent: write ? undefined : prunedContent
+              }, null, 2)
+            }
+          ]
+        };
+      }
+
+      case 'get_active_plan': {
+        const { workspacePath } = args as any;
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
+        let planContent = '';
+        let foundFile = '';
+        
+        for (const name of possibleNames) {
+          const filePath = path.join(workspacePath, name);
+          if (fs.existsSync(filePath)) {
+            planContent = fs.readFileSync(filePath, 'utf8').trim();
+            foundFile = name;
+            break;
+          }
+        }
+        
+        if (!planContent) {
+          return {
+            content: [{ type: 'text', text: 'No active plan.md or implementation_plan.md found in the workspace.' }]
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Active Plan loaded from ${foundFile}:\n\n${planContent}`
+            }
+          ]
+        };
+      }
+
       default:
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
@@ -228,6 +335,12 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
   return {
     resources: [
+      {
+        uri: 'nextrouter://plan',
+        name: 'Active Workspace Plan',
+        mimeType: 'text/markdown',
+        description: 'The active project roadmap and task plan (plan.md)'
+      },
       ...activeSessions.map(s => ({
         uri: `nextrouter://sessions/${s.id}`,
         name: `Shared Session: ${s.title}`,
@@ -248,6 +361,29 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const db = getDatabase();
   const { uri } = request.params;
+
+  if (uri === 'nextrouter://plan') {
+    const fs = await import('fs');
+    const path = await import('path');
+    const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
+    let planContent = '';
+    
+    for (const name of possibleNames) {
+      const filePath = path.join(process.cwd(), name);
+      if (fs.existsSync(filePath)) {
+        planContent = fs.readFileSync(filePath, 'utf8').trim();
+        break;
+      }
+    }
+    
+    return {
+      contents: [{
+        uri,
+        mimeType: 'text/markdown',
+        text: planContent || 'No active plan found.'
+      }]
+    };
+  }
 
   if (uri.startsWith('nextrouter://sessions/')) {
     const sessionId = uri.replace('nextrouter://sessions/', '');

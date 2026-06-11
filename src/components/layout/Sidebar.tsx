@@ -22,8 +22,9 @@ export default function Sidebar() {
           const data = await res.json();
           setProviders(data);
         }
-      } catch (e) {
-        console.error('Error loading sidebar providers:', e);
+      } catch (e: any) {
+        // Handle transient fetch errors gracefully (e.g. during dev compilation/hot-reloading)
+        console.warn('Failed to fetch sidebar providers status (retrying automatically)');
       }
     }
     fetchProviders();
@@ -59,11 +60,13 @@ export default function Sidebar() {
 
       <nav className="nav-menu">
         {navItems.map((item) => (
-          <Link href={item.path} key={item.path}>
-            <div className={`nav-item ${pathname === item.path ? 'active' : ''}`}>
-              <span style={{ fontSize: '1.2rem' }}>{item.icon}</span>
-              <span>{item.name}</span>
-            </div>
+          <Link 
+            href={item.path} 
+            key={item.path} 
+            className={`nav-item ${pathname === item.path ? 'active' : ''}`}
+          >
+            <span style={{ fontSize: '1.2rem' }}>{item.icon}</span>
+            <span>{item.name}</span>
           </Link>
         ))}
       </nav>
@@ -81,7 +84,7 @@ export default function Sidebar() {
                 <div key={p.id} style={{
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'between',
+                  justifyContent: 'space-between',
                   padding: '8px 12px',
                   borderRadius: '8px',
                   background: isActive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)',

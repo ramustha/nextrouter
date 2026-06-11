@@ -19,6 +19,7 @@ export interface SessionRow {
   status: string;
   token_count: number;
   messages: any[]; // JSON serialized
+  workspace_path?: string;
 }
 
 export interface ContextSnapshotRow {
@@ -128,7 +129,9 @@ class JsonDatabase {
 
   private saveData(data: DatabaseSchema) {
     try {
-      fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf8');
+      const tempPath = this.filePath + '.tmp';
+      fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
+      fs.renameSync(tempPath, this.filePath);
     } catch (e) {
       console.error('Failed to write database file:', e);
     }

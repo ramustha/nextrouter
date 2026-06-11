@@ -7,12 +7,14 @@ NextRouter is a unified, 100% local platform to **monitor**, **share context**, 
 ## 🚀 Key Features
 
 1. **⚡ Context Bridge**: Compile session handover packages to switch between providers without losing your active task goals, decisions, or recent messages.
-2. **📁 Git Integration**: Automatically detect changed files in the workspace and view inline green/red unified diff lines before bridging context.
-3. **✂️ Code Pruner**: Strip internal implementation bodies from JavaScript, TypeScript, and Python code, saving up to 85% of tokens.
-4. **📊 Cost & Token Analytics**: Calculate token consumption and estimate accrued pricing per provider and session.
-5. **🔔 Native Desktop Notifications**: Get macOS native notifications when active token budgets exceed a 90% threshold.
-6. **🤖 Background CLI Sync Daemon**: A background service that checks active AI processes (`Cursor`, `claude`, etc.) and automatically syncs rules when active.
-7. **🔌 Model Context Protocol (MCP)**: Universal MCP stdio server to let Cursor or Claude Code query shared sessions and skills directly.
+2. **💬 Multi-Assistant Conversation History**: Full extraction and visual rendering of active chat histories for **Claude Code CLI** and **Cursor** sessions directly inside the dashboard.
+3. **🔍 Unified Timeline Filtering**: Glassmorphic filter tabs to navigate and filter sessions instantly by specific AI providers with dedicated theme colors.
+4. **📁 Git Integration**: Automatically detect changed files in the workspace and view inline green/red unified diff lines before bridging context.
+5. **✂️ Code Pruner**: Strip internal implementation bodies from JavaScript, TypeScript, and Python code, saving up to 85% of tokens.
+6. **📊 Cost & Token Analytics**: Calculate token consumption and estimate accrued pricing per provider and session.
+7. **🔔 Native Desktop Notifications**: Get macOS native notifications when active token budgets exceed a 90% threshold.
+8. **🤖 Background CLI Sync Daemon**: A background service that checks active AI processes (`Cursor`, `claude`, etc.) and automatically syncs rules when active.
+9. **🔌 Model Context Protocol (MCP)**: Universal MCP stdio server to let Cursor or Claude Code query shared sessions and skills directly.
 
 ---
 
