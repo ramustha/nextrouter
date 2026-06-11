@@ -17,6 +17,66 @@ interface PrunerResult {
   savedPercent: number;
 }
 
+interface GitFileStatus {
+  filepath: string;
+  status: string;
+  code: string;
+}
+
+interface GitStatusResult {
+  isRepository: boolean;
+  branch: string;
+  files: GitFileStatus[];
+}
+
+function DiffViewer({ diff }: { diff: string }) {
+  if (!diff) {
+    return (
+      <div style={{ padding: '20px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+        No changes or empty diff.
+      </div>
+    );
+  }
+
+  const lines = diff.split('\n');
+  return (
+    <div style={{
+      fontFamily: 'var(--font-mono)',
+      fontSize: '0.85rem',
+      lineHeight: '1.5',
+      overflowX: 'auto',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all',
+      background: 'rgba(0, 0, 0, 0.25)',
+      borderRadius: '8px',
+      border: '1px solid var(--border-color)',
+      padding: '16px',
+      maxHeight: '450px',
+      overflowY: 'auto'
+    }}>
+      {lines.map((line, idx) => {
+        let color = 'inherit';
+        let bg = 'transparent';
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          color = 'rgba(16, 185, 129, 0.95)'; // emerald-500
+          bg = 'rgba(16, 185, 129, 0.05)';
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          color = 'rgba(239, 68, 68, 0.95)'; // red-500
+          bg = 'rgba(239, 68, 68, 0.05)';
+        } else if (line.startsWith('@@')) {
+          color = 'var(--color-primary)';
+          bg = 'var(--color-primary-glow)';
+        }
+        return (
+          <div key={idx} style={{ color, backgroundColor: bg, padding: '2px 4px', borderRadius: '2px' }}>
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ContextBridgePage() {
   const [activeTab, setActiveTab] = useState('bridge');
   
@@ -34,6 +94,18 @@ export default function ContextBridgePage() {
   const [codeContent, setCodeContent] = useState('');
   const [prunedResult, setPrunedResult] = useState<PrunerResult | null>(null);
   const [loadingPruner, setLoadingPruner] = useState(false);
+
+  // Git State
+  const [gitStatus, setGitStatus] = useState<GitStatusResult>({
+    isRepository: false,
+    branch: '',
+    files: []
+  });
+  const [selectedGitFile, setSelectedGitFile] = useState<string>('');
+  const [gitDiff, setGitDiff] = useState<string>('');
+  const [loadingGit, setLoadingGit] = useState(false);
+  const [loadingGitDiff, setLoadingGitDiff] = useState(false);
+  const [copiedGit, setCopiedGit] = useState(false);
 
   useEffect(() => {
     async function loadSessions() {
@@ -53,6 +125,46 @@ export default function ContextBridgePage() {
     }
     loadSessions();
   }, [sourceProvider]);
+
+  // Fetch Git Status
+  async function loadGitStatus() {
+    setLoadingGit(true);
+    try {
+      const res = await fetch('/api/git');
+      if (res.ok) {
+        const data = await res.json();
+        setGitStatus(data);
+        if (data.files.length > 0 && !selectedGitFile) {
+          // don't auto-load diff unless requested
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load git status:', e);
+    } finally {
+      setLoadingGit(false);
+    }
+  }
+
+  useEffect(() => {
+    loadGitStatus();
+  }, []);
+
+  async function handleFetchDiff(filepath: string) {
+    setSelectedGitFile(filepath);
+    setLoadingGitDiff(true);
+    setGitDiff('');
+    try {
+      const res = await fetch(`/api/git?action=diff&file=${encodeURIComponent(filepath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setGitDiff(data.diff);
+      }
+    } catch (e) {
+      console.error('Failed to load file diff:', e);
+    } finally {
+      setLoadingGitDiff(false);
+    }
+  }
 
   async function handleGenerateHandover() {
     if (!selectedSessionId) {
@@ -114,6 +226,13 @@ export default function ContextBridgePage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function handleCopyDiff() {
+    if (!gitDiff) return;
+    navigator.clipboard.writeText(gitDiff);
+    setCopiedGit(true);
+    setTimeout(() => setCopiedGit(false), 2000);
+  }
+
   const filteredSessions = sessions.filter(s => s.provider_id === sourceProvider);
 
   return (
@@ -154,10 +273,22 @@ export default function ContextBridgePage() {
           >
             ✂️ Code Pruner
           </button>
+          <button 
+            className="btn" 
+            onClick={() => setActiveTab('git')}
+            style={{ 
+              background: activeTab === 'git' ? 'var(--color-primary)' : 'transparent',
+              color: activeTab === 'git' ? 'var(--text-main)' : 'var(--text-muted)',
+              padding: '8px 16px',
+              fontSize: '0.85rem'
+            }}
+          >
+            📁 Git Changes
+          </button>
         </div>
       </div>
 
-      {activeTab === 'bridge' ? (
+      {activeTab === 'bridge' && (
         /* BRIDGE INTERFACE */
         <div style={{
           display: 'grid',
@@ -299,7 +430,9 @@ export default function ContextBridgePage() {
             )}
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'pruner' && (
         /* PRUNER INTERFACE */
         <div style={{
           display: 'grid',
@@ -436,6 +569,201 @@ export default function ContextBridgePage() {
                 >
                   📋 Copy Pruned Outline
                 </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'git' && (
+        /* GIT INTERFACE */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1.2fr 1.5fr',
+          gap: '32px',
+          alignItems: 'start'
+        }}>
+          {/* Git Files List */}
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📁 Workspace Changes
+                {gitStatus.isRepository && (
+                  <span style={{
+                    fontSize: '0.75rem',
+                    background: 'var(--color-primary-glow)',
+                    color: 'var(--color-primary)',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontWeight: 500
+                  }}>
+                    branch: {gitStatus.branch}
+                  </span>
+                )}
+              </h3>
+              <button 
+                className="btn btn-secondary" 
+                onClick={loadGitStatus} 
+                disabled={loadingGit}
+                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+              >
+                {loadingGit ? 'Scanning...' : '🔄 Refresh'}
+              </button>
+            </div>
+
+            {!gitStatus.isRepository ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: 1,
+                color: 'var(--text-muted)',
+                gap: '12px',
+                border: '1px dashed var(--border-color)',
+                borderRadius: '8px',
+                padding: '40px'
+              }}>
+                <span style={{ fontSize: '2.5rem' }}>⚠️</span>
+                <p style={{ textAlign: 'center' }}>Git is not initialized in this workspace or path is not a repository.</p>
+              </div>
+            ) : gitStatus.files.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: 1,
+                color: 'var(--text-muted)',
+                gap: '12px',
+                border: '1px dashed var(--border-color)',
+                borderRadius: '8px',
+                padding: '40px'
+              }}>
+                <span style={{ fontSize: '2.5rem' }}>✨</span>
+                <p style={{ textAlign: 'center', color: 'var(--color-success)', fontWeight: 500 }}>Workspace is clean!</p>
+                <p style={{ fontSize: '0.8rem', textAlign: 'center', color: 'var(--text-muted)' }}>No modified or untracked files detected.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '380px' }}>
+                {gitStatus.files.map((file) => {
+                  let badgeBg = 'rgba(75, 85, 99, 0.1)';
+                  let badgeColor = 'var(--text-muted)';
+                  
+                  if (file.status === 'modified') {
+                    badgeBg = 'rgba(245, 158, 11, 0.15)';
+                    badgeColor = 'var(--color-warning)';
+                  } else if (file.status === 'untracked' || file.status === 'added') {
+                    badgeBg = 'rgba(16, 185, 129, 0.15)';
+                    badgeColor = 'var(--color-success)';
+                  } else if (file.status === 'deleted') {
+                    badgeBg = 'rgba(239, 68, 68, 0.15)';
+                    badgeColor = 'var(--color-danger)';
+                  }
+
+                  const isSelected = selectedGitFile === file.filepath;
+
+                  return (
+                    <div 
+                      key={file.filepath}
+                      onClick={() => handleFetchDiff(file.filepath)}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        background: isSelected ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.01)',
+                        border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-color)'}`,
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      className="git-file-row"
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                        <span style={{ 
+                          fontSize: '0.9rem', 
+                          fontWeight: isSelected ? 600 : 500,
+                          color: isSelected ? 'var(--color-primary)' : 'var(--text-main)',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {file.filepath.split('/').pop()}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {file.filepath}
+                        </span>
+                      </div>
+                      
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        background: badgeBg,
+                        color: badgeColor,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}>
+                        {file.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Git Diff Viewer */}
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.15rem' }}>Git Line Diff</h3>
+              {gitDiff && (
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleCopyDiff} 
+                  disabled={!gitDiff}
+                  style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                >
+                  {copiedGit ? '✅ Copied!' : '📋 Copy Diff'}
+                </button>
+              )}
+            </div>
+
+            {!selectedGitFile ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: 1,
+                color: 'var(--text-muted)',
+                gap: '12px',
+                border: '1px dashed var(--border-color)',
+                borderRadius: '8px',
+                padding: '40px'
+              }}>
+                <span style={{ fontSize: '2.5rem' }}>🔍</span>
+                <p style={{ textAlign: 'center' }}>Select a file from the workspace changes list to view its code modifications.</p>
+              </div>
+            ) : loadingGitDiff ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: 1,
+                color: 'var(--text-muted)'
+              }}>
+                <p>Generating diff...</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Showing diff for <strong style={{ color: 'var(--text-main)' }}>{selectedGitFile}</strong>
+                </div>
+                <DiffViewer diff={gitDiff} />
               </div>
             )}
           </div>

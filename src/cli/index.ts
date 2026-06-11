@@ -94,6 +94,24 @@ async function main() {
         break;
       }
 
+      case 'daemon': {
+        const daemonAction = args[1];
+        const { startDaemonBackground, stopDaemon, getDaemonStatus, runDaemonWorker } = await import('./daemon');
+
+        if (daemonAction === 'start') {
+          startDaemonBackground(workspacePath);
+        } else if (daemonAction === 'stop') {
+          stopDaemon();
+        } else if (daemonAction === 'status') {
+          getDaemonStatus();
+        } else if (daemonAction === 'run-worker') {
+          await runDaemonWorker(workspacePath);
+        } else {
+          console.log('\nUsage: npm run cli daemon [start|stop|status]\n');
+        }
+        break;
+      }
+
       default:
         console.error(`Unknown command: ${command}`);
         printHelp();
@@ -117,6 +135,7 @@ Commands:
   sync                 Trigger bidirectional rule file synchronization
   handover <from> [to] Generate handover context from provider's latest session
   tokens               Display current token usage metrics against model windows
+  daemon [start|stop]  Manage background auto-sync worker daemon
   help                 Show this help details
 `);
 }

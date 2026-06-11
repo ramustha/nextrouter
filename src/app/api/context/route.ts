@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDatabase } from '@/store/database';
 import { detectActiveProviders } from '@/adapters/registry';
 import { generateHandover } from '@/engine/handover';
+import { triggerSystemNotification } from '@/notifications/alerts';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,6 +17,15 @@ export async function GET(request: Request) {
       const size = await provider.getContextSize(workspacePath);
       metrics[provider.id] = size;
       totalWorkspaceTokens += size.totalTokens;
+
+      if (size.budgetUsedPercent >= 90) {
+        triggerSystemNotification(
+          'NextRouter Alert',
+          `${provider.name} context has crossed 90% threshold (${size.totalTokens.toLocaleString()} tokens). Consider switching providers.`,
+          'Token Budget Limit Reached',
+          `threshold-${provider.id}`
+        );
+      }
     } catch (e) {
       console.error(`Failed to get size for ${provider.id}:`, e);
     }
@@ -26,6 +36,7 @@ export async function GET(request: Request) {
     providers: metrics
   });
 }
+
 
 export async function POST(request: Request) {
   const db = getDatabase();

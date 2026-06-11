@@ -40,14 +40,22 @@ interface CostAnalytics {
   }>;
 }
 
+interface SystemStatus {
+  watcher: { running: boolean };
+  daemon: { running: boolean; pid: number | null; activeAIProcesses: string[] };
+  mcp: { configuredInClaude: boolean; configuredInCursor: boolean };
+}
+
 export default function DashboardPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [metrics, setMetrics] = useState<ContextMetrics | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [costAnalytics, setCostAnalytics] = useState<CostAnalytics>({ totalTokens: 0, totalCost: 0, breakdown: [] });
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [workspacePath, setWorkspacePath] = useState('');
   const [scanning, setScanning] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [togglingDaemon, setTogglingDaemon] = useState(false);
 
   async function loadData() {
     try {
@@ -62,6 +70,9 @@ export default function DashboardPage() {
 
       const cRes = await fetch('/api/tokens/usage');
       if (cRes.ok) setCostAnalytics(await cRes.json());
+
+      const sysRes = await fetch('/api/system');
+      if (sysRes.ok) setSystemStatus(await sysRes.json());
     } catch (e) {
       console.error('Error loading dashboard data:', e);
     }
@@ -70,6 +81,10 @@ export default function DashboardPage() {
   useEffect(() => {
     setWorkspacePath(window.location.pathname || '');
     loadData();
+    
+    // Poll system and provider statuses every 5 seconds
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   async function handleScan() {
@@ -106,6 +121,32 @@ export default function DashboardPage() {
       console.error('Sync failed:', e);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleToggleDaemon() {
+    if (!systemStatus) return;
+    setTogglingDaemon(true);
+    const action = systemStatus.daemon.running ? 'stop' : 'start';
+    try {
+      const res = await fetch('/api/system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: 'daemon', action })
+      });
+      if (res.ok) {
+        // Wait 1.5 seconds for daemon process modification and reload
+        setTimeout(async () => {
+          const sysRes = await fetch('/api/system');
+          if (sysRes.ok) setSystemStatus(await sysRes.json());
+          setTogglingDaemon(false);
+        }, 1500);
+      } else {
+        setTogglingDaemon(false);
+      }
+    } catch (e) {
+      console.error('Failed to toggle daemon:', e);
+      setTogglingDaemon(false);
     }
   }
 
@@ -272,6 +313,105 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Services Control Center */}
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              ⚙️ Services Control Center
+            </h3>
+            
+            {systemStatus ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.85rem' }}>
+                
+                {/* 1. Daemon Status */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: systemStatus.daemon.running ? 'var(--color-success)' : 'var(--text-dark)',
+                        boxShadow: systemStatus.daemon.running ? '0 0 8px var(--color-success)' : 'none'
+                      }} />
+                      <span style={{ fontWeight: 600 }}>Sync Daemon</span>
+                    </div>
+                    <button 
+                      className="btn" 
+                      onClick={handleToggleDaemon}
+                      disabled={togglingDaemon}
+                      style={{ 
+                        padding: '4px 8px', 
+                        fontSize: '0.75rem',
+                        background: systemStatus.daemon.running ? 'rgba(239, 68, 68, 0.15)' : 'var(--color-primary-glow)',
+                        color: systemStatus.daemon.running ? 'var(--color-danger)' : 'var(--color-primary)',
+                        border: 'none',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      {togglingDaemon ? 'Toggling...' : systemStatus.daemon.running ? 'Stop Daemon' : 'Start Daemon'}
+                    </button>
+                  </div>
+                  
+                  {systemStatus.daemon.running && systemStatus.daemon.pid && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span>PID: <code>{systemStatus.daemon.pid}</code></span>
+                      <span>
+                        Active Editors: {systemStatus.daemon.activeAIProcesses.length > 0 
+                          ? <strong style={{ color: 'var(--color-success)' }}>{systemStatus.daemon.activeAIProcesses.join(', ')}</strong> 
+                          : 'None detected (waiting)'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. File Watcher Status */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                  <span style={{ fontWeight: 600 }}>Web Dev Watcher</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: systemStatus.watcher.running ? 'var(--color-success)' : 'var(--text-dark)',
+                      boxShadow: systemStatus.watcher.running ? '0 0 8px var(--color-success)' : 'none'
+                    }} />
+                    <span style={{ color: systemStatus.watcher.running ? 'var(--color-success)' : 'var(--text-muted)', fontWeight: 500 }}>
+                      {systemStatus.watcher.running ? 'Running' : 'Offline'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. MCP Configurations */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ fontWeight: 600 }}>MCP Integrations</span>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <span>Claude Code config:</span>
+                    <span style={{ 
+                      color: systemStatus.mcp.configuredInClaude ? 'var(--color-success)' : 'var(--text-muted)',
+                      fontWeight: 600 
+                    }}>
+                      {systemStatus.mcp.configuredInClaude ? 'Configured ✓' : 'Not setup'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <span>Cursor Feature MCP:</span>
+                    <span style={{ 
+                      color: systemStatus.mcp.configuredInCursor ? 'var(--color-success)' : 'var(--text-muted)',
+                      fontWeight: 600 
+                    }}>
+                      {systemStatus.mcp.configuredInCursor ? 'Configured ✓' : 'Not setup'}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading system services status...</div>
+            )}
           </div>
 
         </div>

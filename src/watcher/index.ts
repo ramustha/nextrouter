@@ -7,8 +7,10 @@ import { eventBus } from './events';
 
 const lastSyncHashes = new Map<string, string>();
 let syncTimeout: NodeJS.Timeout | null = null;
+export let isWatcherActive = false;
 
 export function startWorkspaceWatcher(workspacePath: string) {
+  isWatcherActive = true;
   const watchPaths = [
     path.join(workspacePath, 'CLAUDE.md'),
     path.join(workspacePath, '.cursorrules'),
