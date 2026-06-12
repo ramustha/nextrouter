@@ -1,0 +1,23 @@
+src/plugins/installer.ts
+  827d42fc9f954d31 43-49,108-120,284-286,288-304,306-323,333-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "a94d6e70be72d0856f07282a71334c599d6270ab",
+  "prompts": {
+    "827d42fc9f954d31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c572e90-76ca-4001-9449-865485490165",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "ramadhani.musthofa <ramadhani.musthofa@gdn-commerce.com>",
+      "messages": [],
+      "total_additions": 78,
+      "total_deletions": 7,
+      "accepted_lines": 2547,
+      "overriden_lines": 0
+    }
+  }
+}
