@@ -16,6 +16,8 @@ async function main() {
   if (command === '/status') command = 'status';
   if (command === '/prune') command = 'prune';
   if (command === '/help') command = 'help';
+  if (command === '/plugins' || command === '/list-plugins') command = 'list-plugins';
+  if (command === '/install-plugin') command = 'install-plugin';
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     printHelp();
@@ -172,6 +174,42 @@ async function main() {
         break;
       }
 
+      case 'install-plugin':
+      case 'plugin-install': {
+        const providerId = args[1];
+        const validProviders = ['claude-code', 'cursor', 'antigravity', 'copilot', 'all'];
+        if (!providerId || !validProviders.includes(providerId)) {
+          console.error(`Usage: nextrouter install-plugin <provider>\nProviders: ${validProviders.join(', ')}`);
+          process.exit(1);
+        }
+        const { installPlugin, getPluginStatus } = await import('../plugins/installer');
+        const targets = providerId === 'all' ? ['claude-code', 'cursor', 'antigravity', 'copilot'] : [providerId];
+        for (const id of targets) {
+          console.log(`\nInstalling plugin for ${id}...`);
+          const logs = installPlugin(id, workspacePath);
+          logs.forEach(l => console.log(` ${l}`));
+        }
+        console.log('\n✓ Plugin installation complete.\n');
+        break;
+      }
+
+      case 'list-plugins':
+      case 'plugins': {
+        const { getPluginStatus } = await import('../plugins/installer');
+        const statuses = getPluginStatus(workspacePath);
+        console.log('\n=== NextRouter Plugin Status ===');
+        statuses.forEach(s => {
+          const icon = s.installed ? '✓' : '✗';
+          const status = s.installed ? 'INSTALLED' : 'NOT INSTALLED';
+          console.log(` ${icon} ${s.providerName} (${s.providerId}): ${status}`);
+          if (!s.installed && s.missingFiles.length > 0) {
+            s.missingFiles.forEach(f => console.log(`     Missing: ${f}`));
+          }
+        });
+        console.log('');
+        break;
+      }
+
       default:
         console.error(`Unknown command: ${command}`);
         printHelp();
@@ -197,10 +235,13 @@ Commands:
   tokens               Display current token usage metrics against model windows
   daemon [start|stop]  Manage background auto-sync worker daemon
   prune <file> [--write] Strip implementation details from Javascript, Typescript, or Python file
+  install-plugin <id|all>  Install NextRouter plugin into a provider (claude-code, cursor, antigravity, copilot, all)
+  list-plugins             Show plugin installation status for all providers
   help                 Show this help details
 
 Slash Commands:
   /status, /sync, /handoff, /tokens, /daemon, /prune, /help
+  /plugins, /list-plugins, /install-plugin
 `);
 }
 
