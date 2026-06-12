@@ -74,6 +74,9 @@ export default function DashboardPage() {
   const [modalTab, setModalTab] = useState<'conversation' | 'handover'>('conversation');
   const [copiedBriefing, setCopiedBriefing] = useState<boolean>(false);
   const [filterProvider, setFilterProvider] = useState<string>('all');
+  const [bridgeTargetProvider, setBridgeTargetProvider] = useState<string>('');
+  const [injecting, setInjecting] = useState<boolean>(false);
+  const [injected, setInjected] = useState<boolean>(false);
 
   async function loadData() {
     try {
@@ -207,7 +210,9 @@ export default function DashboardPage() {
     setHandoverBriefing('');
     setLoadingBriefing(true);
     setCopiedBriefing(false);
-    
+    setBridgeTargetProvider('');
+    setInjected(false);
+
     try {
       const res = await fetch('/api/context', {
         method: 'POST',
@@ -237,6 +242,34 @@ export default function DashboardPage() {
     navigator.clipboard.writeText(handoverBriefing);
     setCopiedBriefing(true);
     setTimeout(() => setCopiedBriefing(false), 2000);
+  }
+
+  async function handleInjectToProvider() {
+    if (!bridgeTargetProvider || !handoverBriefing || !selectedSession) return;
+    setInjecting(true);
+    setInjected(false);
+    try {
+      const res = await fetch('/api/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          providerId: bridgeTargetProvider,
+          title: `[Bridged from ${selectedSession.provider_id}] ${selectedSession.title}`,
+          messages: [
+            { role: 'system', content: handoverBriefing }
+          ]
+        })
+      });
+      if (res.ok) {
+        setInjected(true);
+        setTimeout(() => setInjected(false), 3000);
+      }
+    } catch (e) {
+      console.error('Inject failed:', e);
+    } finally {
+      setInjecting(false);
+    }
   }
 
   const activeProviderCount = providers.filter(p => p.status === 'active').length;
@@ -1167,6 +1200,68 @@ export default function DashboardPage() {
                           scrollbarWidth: 'thin'
                         }}
                       />
+                      {/* Target Provider Bridge */}
+                      <div style={{
+                        marginTop: '16px',
+                        padding: '16px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}>
+                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          ⚡ Bridge to Another Provider
+                        </h4>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <select
+                            value={bridgeTargetProvider}
+                            onChange={(e) => setBridgeTargetProvider(e.target.value)}
+                            style={{
+                              flex: 1,
+                              padding: '8px 12px',
+                              background: 'rgba(0, 0, 0, 0.3)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '8px',
+                              color: 'var(--text-main)',
+                              fontSize: '0.85rem'
+                            }}
+                          >
+                            <option value="">Select target provider...</option>
+                            {[
+                              { id: 'claude-code', name: 'Claude Code' },
+                              { id: 'cursor', name: 'Cursor' },
+                              { id: 'antigravity', name: 'Antigravity' },
+                              { id: 'copilot', name: 'GitHub Copilot' }
+                            ]
+                              .filter(p => p.id !== selectedSession?.provider_id)
+                              .map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                          </select>
+                          <button
+                            className="btn btn-primary"
+                            onClick={handleInjectToProvider}
+                            disabled={!bridgeTargetProvider || injecting || !handoverBriefing}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '0.85rem',
+                              background: 'linear-gradient(to right, #8b5cf6, #06b6d4)',
+                              border: 'none',
+                              borderRadius: '8px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              opacity: !bridgeTargetProvider ? 0.5 : 1
+                            }}
+                          >
+                            {injected ? '✅ Injected!' : injecting ? 'Injecting...' : '⚡ Inject Context'}
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                          Saves this handover briefing as an active context record in the target provider's session database. The next time that provider calls <code>get_shared_context</code> via MCP, it will receive this handover.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
