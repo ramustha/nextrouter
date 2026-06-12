@@ -530,13 +530,38 @@ export default function OnboardingWalkthroughPage() {
             {activeProviderTab === 'cursor' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
                 <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: '#22d3ee' }}>🌟 Advanced Cursor Chat Timeline Resolution</h3>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.9rem' }}>
-                    <li><strong>SQLite Integration:</strong> NextRouter reads local Cursor databases (such as <code>~/.cursor/chats/*.db</code> files) recursively, parsing messages, token counts, and resolving workspace directories directly.</li>
-                    <li><strong>Eviction-Resistant Cache:</strong> Even if Cursor removes projects from its "Recently Opened" cache, NextRouter reconstructs and resolves paths using user messages and DB metadata.</li>
-                    <li><strong>Cursor Rules:</strong> NextRouter targets the <code>.cursorrules</code> file in your project root to auto-sync rules and custom skills.</li>
-                    <li><strong>MCP Connection:</strong> Configure NextRouter as an MCP server inside Cursor Features to allow Cursor to query timeline data.</li>
-                  </ul>
+                  <h3 style={{ fontSize: '1.2rem', marginBottom: '16px', color: '#22d3ee' }}>🖱️ Cursor — MCP + Rules Integration</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 1 — Install the NextRouter Plugin</strong>
+                      <p>Use the Install Plugins step (step 7) or run this command. It writes two files: an MDC rule and the MCP server config.</p>
+                      <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', color: '#e2e8f0', marginTop: '8px', overflowX: 'auto' }}>{`npx tsx src/cli/index.ts install-plugin cursor`}</pre>
+                      <p style={{ marginTop: '8px', fontSize: '0.82rem' }}>This creates <code>.cursor/rules/nextrouter-commands.mdc</code> (always-applied rule) and <code>.cursor/mcp.json</code> (MCP server registration).</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 2 — Restart Cursor</strong>
+                      <p>Cursor reads <code>.cursor/mcp.json</code> on startup. Restart Cursor (or reload the window with Cmd+Shift+P → &quot;Reload Window&quot;) to activate the MCP connection.</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 3 — Verify MCP is Active</strong>
+                      <p>In Cursor chat, ask: <em>&quot;What tools do you have available?&quot;</em> — you should see <code>get_shared_context</code>, <code>get_handover</code>, <code>sync_rules</code>, and others listed.</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>How It Works</strong>
+                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <li><strong>Session reading:</strong> NextRouter reads Cursor&apos;s local SQLite chat databases from <code>~/.cursor/chats/</code> to extract sessions, token counts, and workspace paths.</li>
+                        <li><strong>Rules sync:</strong> NextRouter reads/writes <code>.cursorrules</code> and <code>.cursor/rules/*.mdc</code>. Universal skills are injected automatically.</li>
+                        <li><strong>MDC rule:</strong> The <code>nextrouter-commands.mdc</code> rule has <code>alwaysApply: true</code>, meaning Cursor loads it in every chat — no user action needed.</li>
+                      </ul>
+                    </div>
+                    <div style={{ padding: '10px 14px', background: 'rgba(6, 182, 212, 0.06)', borderRadius: '8px', border: '1px solid rgba(6, 182, 212, 0.15)' }}>
+                      <strong style={{ fontSize: '0.82rem', color: '#22d3ee' }}>Config files written by installer:</strong>
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
+                        <code>.cursor/rules/nextrouter-commands.mdc</code> — Always-applied rule with MCP tool reference
+                        <code>.cursor/mcp.json</code> — MCP server registration (nextrouter → npx tsx src/cli/mcp.ts)
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -557,13 +582,39 @@ export default function OnboardingWalkthroughPage() {
             {/* Antigravity Details */}
             {activeProviderTab === 'antigravity' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: '#fbbf24' }}>🌟 Antigravity Native Observability</h3>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.9rem' }}>
-                    <li><strong>Native Logs:</strong> Antigravity reads session logs directly from the project's local directory (e.g. <code>.gemini/antigravity/transcript.jsonl</code>) to trace agent coding steps and execution statuses.</li>
-                    <li><strong>Instructions Standard:</strong> NextRouter compiles rules and injects them into <code>GEMINI.md</code> in your project root to control Antigravity prompts.</li>
-                    <li><strong>Zero-Config Monitoring:</strong> Token budgets, Git branch name, and active workspace paths are resolved automatically out-of-the-box.</li>
-                  </ul>
+                <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '12px', padding: '24px' }}>
+                  <h3 style={{ fontSize: '1.2rem', marginBottom: '16px', color: '#34d399' }}>🌀 Antigravity — Gemini CLI MCP Integration</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 1 — Install the NextRouter Plugin</strong>
+                      <p>Run the installer to register the MCP server and update GEMINI.md with tool usage instructions.</p>
+                      <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', color: '#e2e8f0', marginTop: '8px', overflowX: 'auto' }}>{`npx tsx src/cli/index.ts install-plugin antigravity`}</pre>
+                      <p style={{ marginTop: '8px', fontSize: '0.82rem' }}>This updates <code>GEMINI.md</code> with a rich NextRouter system context block and writes <code>~/.gemini/settings.json</code> with the MCP server entry.</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 2 — Restart the Antigravity / Gemini CLI Session</strong>
+                      <p>Gemini CLI reads <code>~/.gemini/settings.json</code> at startup. Close and reopen your terminal session (or run <code>gemini</code> again) to pick up the new MCP server.</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 3 — Verify</strong>
+                      <p>In your Gemini CLI session, ask: <em>&quot;What MCP tools do you have?&quot;</em> — you should see <code>get_shared_context</code>, <code>get_handover</code>, <code>sync_rules</code>, and others.</p>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>How It Works</strong>
+                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <li><strong>Session reading:</strong> NextRouter reads Antigravity&apos;s transcript logs from <code>~/.gemini/antigravity/brain/[session-id]/.system_generated/logs/transcript.jsonl</code>.</li>
+                        <li><strong>Rules sync:</strong> NextRouter reads/writes <code>GEMINI.md</code> in your project root. Universal skills are injected on sync.</li>
+                        <li><strong>GEMINI.md block:</strong> The installer adds a <code>NEXTROUTER_COMMANDS_START/END</code> block with proactive MCP tool usage instructions.</li>
+                      </ul>
+                    </div>
+                    <div style={{ padding: '10px 14px', background: 'rgba(16, 185, 129, 0.06)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
+                      <strong style={{ fontSize: '0.82rem', color: '#34d399' }}>Config files written by installer:</strong>
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
+                        <code>GEMINI.md</code> — NextRouter commands block with proactive MCP tool instructions
+                        <code>~/.gemini/settings.json</code> — MCP server registration (nextrouter → npx tsx src/cli/mcp.ts)
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
