@@ -40,8 +40,13 @@ function getIntegrationFiles(providerId: string, workspacePath: string): string[
         path.join(workspacePath, '.cursor', 'rules', 'nextrouter-commands.mdc'),
         path.join(workspacePath, '.cursor', 'mcp.json')
       ];
-    case 'antigravity':
-      return [path.join(workspacePath, 'GEMINI.md')];
+    case 'antigravity': {
+      const geminiSettingsPath = path.join(os.homedir(), '.gemini', 'settings.json');
+      return [
+        path.join(workspacePath, 'GEMINI.md'),
+        geminiSettingsPath
+      ];
+    }
     case 'copilot':
       return [
         path.join(workspacePath, '.github', 'copilot-instructions.md'),
@@ -100,8 +105,19 @@ export function uninstallPlugin(providerId: string, workspacePath: string): stri
         } catch {}
       }
     } else if (providerId === 'antigravity') {
-      removeNextrouterBlockFromFile(file, '<!-- NEXTROUTER_COMMANDS_START -->', '<!-- NEXTROUTER_COMMANDS_END -->');
-      logs.push(`Removed NextRouter commands block from ${path.basename(file)}`);
+      if (file.endsWith('settings.json') && fs.existsSync(file)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (config.mcpServers?.nextrouter) {
+            delete config.mcpServers.nextrouter;
+            fs.writeFileSync(file, JSON.stringify(config, null, 2), 'utf8');
+            logs.push(`Removed nextrouter entry from ~/.gemini/settings.json`);
+          }
+        } catch {}
+      } else if (file.endsWith('GEMINI.md')) {
+        removeNextrouterBlockFromFile(file, '<!-- NEXTROUTER_COMMANDS_START -->', '<!-- NEXTROUTER_COMMANDS_END -->');
+        logs.push(`Removed NextRouter commands block from GEMINI.md`);
+      }
     } else if (providerId === 'copilot') {
       if (file.endsWith('tasks.json') && fs.existsSync(file)) {
         removeNextrouterTasksFromJson(file, logs);
@@ -265,8 +281,46 @@ ${cliCmd} prune src/adapters/cursor.ts  # Prune a file
 }
 
 function installAntigravityGeminiMd(workspacePath: string, cliCmd: string, logs: string[]): void {
+  const mcpPath = path.resolve(workspacePath, 'src', 'cli', 'mcp.ts');
+
+  // Enhanced GEMINI.md block with proactive tool guidance
   const geminiMdPath = path.join(workspacePath, 'GEMINI.md');
-  const block = `\n\n<!-- NEXTROUTER_COMMANDS_START -->\n## NextRouter Integration\n\nNextRouter MCP server is connected. Use these tool calls for context management:\n- \`get_shared_context\` — Retrieve active cross-provider context\n- \`get_handover\` — Get handover packet from another provider's latest session\n- \`sync_rules\` — Sync workspace rules across all AI providers\n- \`prune_code\` — Strip implementation bodies to reduce token usage\n- \`get_active_plan\` — Read workspace plan.md\n\nCLI available at: \`${cliCmd}\`\n<!-- NEXTROUTER_COMMANDS_END -->`;
+  const block = `
+
+
+<!-- NEXTROUTER_COMMANDS_START -->
+## NextRouter — Context Management via MCP
+
+NextRouter is registered as an MCP server in \`~/.gemini/settings.json\`. Call its tools proactively to manage context across AI providers.
+
+### When to Call Each Tool
+
+**\`get_shared_context\`** (no params) — Call when user asks "what were we working on?", "what's the current status?", or starting a new session.
+
+**\`save_context\`** (providerId, title, messages) — Call when user says "save this session", "checkpoint this", or at natural stopping points.
+Example: \`{ "providerId": "antigravity", "title": "Refactoring auth module", "messages": [...] }\`
+
+**\`get_handover\`** (sourceProviderId, targetProviderId?) — Call when user says "continue this in Claude", "hand off to Cursor", "generate a briefing".
+Example: \`{ "sourceProviderId": "antigravity", "targetProviderId": "cursor" }\`
+
+**\`sync_rules\`** (workspacePath) — Call when user says "sync rules", "update configs", or after editing GEMINI.md.
+Example: \`{ "workspacePath": "${workspacePath}" }\`
+
+**\`prune_code\`** (filepath, write?) — Call when a file is too large for context, or user says "prune this file".
+Example: \`{ "filepath": "src/adapters/antigravity.ts", "write": false }\`
+
+**\`get_active_plan\`** (workspacePath) — Call when user asks "what's the plan?" or starting a new feature.
+Example: \`{ "workspacePath": "${workspacePath}" }\`
+
+### CLI Commands (via Terminal)
+\`\`\`bash
+${cliCmd} status         # Show detected providers and active sessions
+${cliCmd} sync           # Sync GEMINI.md, CLAUDE.md, .cursorrules
+${cliCmd} handover antigravity claude-code  # Generate handover packet
+${cliCmd} tokens         # Show token usage vs context window limits
+${cliCmd} prune src/adapters/antigravity.ts  # Prune a file
+\`\`\`
+<!-- NEXTROUTER_COMMANDS_END -->`;
 
   let existing = '';
   if (fs.existsSync(geminiMdPath)) {
@@ -275,9 +329,26 @@ function installAntigravityGeminiMd(workspacePath: string, cliCmd: string, logs:
       .replace(/<!-- NEXTROUTER_COMMANDS_START -->[\s\S]*<!-- NEXTROUTER_COMMANDS_END -->/, '')
       .trim();
   }
-
   fs.writeFileSync(geminiMdPath, existing + block, 'utf8');
-  logs.push(`Antigravity plugin installed: GEMINI.md updated with NextRouter commands block`);
+  logs.push(`Antigravity GEMINI.md updated with proactive NextRouter tool guidance`);
+
+  // Register MCP server in ~/.gemini/settings.json
+  const geminiDir = path.join(os.homedir(), '.gemini');
+  if (!fs.existsSync(geminiDir)) {
+    fs.mkdirSync(geminiDir, { recursive: true });
+  }
+  const geminiSettingsPath = path.join(geminiDir, 'settings.json');
+  let geminiSettings: any = {};
+  if (fs.existsSync(geminiSettingsPath)) {
+    try { geminiSettings = JSON.parse(fs.readFileSync(geminiSettingsPath, 'utf8')); } catch {}
+  }
+  if (!geminiSettings.mcpServers) geminiSettings.mcpServers = {};
+  geminiSettings.mcpServers.nextrouter = {
+    command: 'npx',
+    args: ['tsx', mcpPath]
+  };
+  fs.writeFileSync(geminiSettingsPath, JSON.stringify(geminiSettings, null, 2), 'utf8');
+  logs.push(`Antigravity MCP server registered: ~/.gemini/settings.json`);
 }
 
 function installCopilotPlugin(workspacePath: string, cliCmd: string, logs: string[]): void {
