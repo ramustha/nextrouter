@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { getProviderMeta } from '@/config/providers';
 
 interface Provider {
   id: string;
@@ -75,6 +76,10 @@ export default function DashboardPage() {
   const [modalTab, setModalTab] = useState<'conversation' | 'handover'>('conversation');
   const [copiedBriefing, setCopiedBriefing] = useState<boolean>(false);
   const [filterProvider, setFilterProvider] = useState<string>('all');
+  const [pluginStatuses, setPluginStatuses] = useState<Array<{
+    providerId: string;
+    installed: boolean;
+  }>>([]);
   const [bridgeTargetProvider, setBridgeTargetProvider] = useState<string>('');
   const [injecting, setInjecting] = useState<boolean>(false);
   const [injected, setInjected] = useState<boolean>(false);
@@ -111,6 +116,14 @@ export default function DashboardPage() {
           setGitBranch('');
         }
       }
+
+      try {
+        const plRes = await fetch(`/api/plugins?workspacePath=${encodeURIComponent(workspacePath || '')}`);
+        if (plRes.ok) {
+          const plData = await plRes.json();
+          setPluginStatuses(plData.map((p: any) => ({ providerId: p.providerId, installed: p.installed })));
+        }
+      } catch {}
     } catch (e) {
       console.error('Error loading dashboard data:', e);
     }
@@ -376,6 +389,43 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Setup status banner */}
+      {pluginStatuses.some(p => !p.installed) && (
+        <div style={{
+          padding: '12px 20px',
+          borderRadius: '10px',
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: '#fbbf24', fontSize: '0.9rem', fontWeight: 600 }}>
+              ⚠️ {pluginStatuses.filter(p => !p.installed).length} provider{pluginStatuses.filter(p => !p.installed).length > 1 ? 's' : ''} not fully configured
+            </span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+              {pluginStatuses.filter(p => !p.installed).map(p => getProviderMeta(p.providerId).name).join(', ')} — MCP server not registered
+            </span>
+          </div>
+          <a href="/walkthrough#integrations" style={{
+            padding: '6px 14px',
+            borderRadius: '6px',
+            background: 'rgba(245, 158, 11, 0.15)',
+            color: '#fbbf24',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            textDecoration: 'none',
+            whiteSpace: 'nowrap'
+          }}>
+            Complete Setup →
+          </a>
+        </div>
+      )}
+
       {/* Overview Cards Row */}
       <div style={{
         display: 'grid',
@@ -400,6 +450,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Providers</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '2px' }}>AI tools detected in this workspace</p>
             <h3 style={{ fontSize: '1.8rem', fontWeight: 700, marginTop: '4px' }}>
               {activeProviderCount} <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 400 }}>/ {providers.length}</span>
             </h3>
@@ -423,6 +474,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Accrued Session Cost</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '2px' }}>Token cost estimate across all providers</p>
             <h3 style={{ fontSize: '1.8rem', fontWeight: 700, marginTop: '4px' }}>
               ${costAnalytics.totalCost.toFixed(2)} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>USD</span>
             </h3>
@@ -446,6 +498,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shared Context Pool</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '2px' }}>Combined tokens in active sessions</p>
             <h3 style={{ fontSize: '1.8rem', fontWeight: 700, marginTop: '4px' }}>
               {totalTokensUsed.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 400 }}>tokens</span>
             </h3>
@@ -453,6 +506,83 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      {/* Feature Guide */}
+      <details style={{
+        background: 'rgba(255, 255, 255, 0.01)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '12px',
+        padding: '0'
+      }}>
+        <summary style={{
+          padding: '16px 20px',
+          cursor: 'pointer',
+          fontWeight: 600,
+          fontSize: '0.9rem',
+          color: 'var(--text-muted)',
+          listStyle: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          userSelect: 'none'
+        }}>
+          <span>📚</span>
+          <span>How NextRouter Works — Feature Guide</span>
+          <span style={{ marginLeft: 'auto', fontSize: '0.75rem' }}>Click to expand</span>
+        </summary>
+        <div style={{
+          padding: '0 20px 20px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: '16px'
+        }}>
+          {[
+            {
+              icon: '🌉',
+              title: 'Context Bridge',
+              desc: 'Resume your AI session in a different provider without losing context. Open any session → Handover tab → select a target → Inject Context. The handover briefing is saved so the target provider loads it on next MCP call.'
+            },
+            {
+              icon: '⚡',
+              title: 'Rules Sync',
+              desc: 'Keeps .cursorrules, CLAUDE.md, and GEMINI.md in sync across all providers. Universal skills (docs in skills/) are automatically injected on each sync. Hit "Sync Rules" or run `nextrouter sync` from terminal.'
+            },
+            {
+              icon: '📊',
+              title: 'Token Budget',
+              desc: "Tracks token usage across all AI sessions so you can see when you're approaching context limits. The budget gauge combines all active sessions. Sessions come from provider log files scanned on workspace detection."
+            },
+            {
+              icon: '🔌',
+              title: 'MCP Integration',
+              desc: 'NextRouter runs as an MCP (Model Context Protocol) server. AI providers connected via MCP can call get_shared_context, save_context, get_handover, sync_rules, prune_code, and get_active_plan directly — no manual CLI needed.'
+            },
+            {
+              icon: '✂️',
+              title: 'Code Pruner',
+              desc: 'Strips implementation bodies (function/class bodies) from JS/TS/Python files, keeping only signatures. Reduces token usage when sharing large files with AI. Run from Context Bridge page or via `nextrouter prune <file>`.'
+            },
+            {
+              icon: '🎯',
+              title: 'One-Click Setup',
+              desc: 'The "One-Click Local Setup & Sync" button in Services registers the MCP server, installs provider plugins (slash commands, MDC rules, VS Code tasks), sets up the shell alias, syncs rules, and starts the background daemon.'
+            }
+          ].map(f => (
+            <div key={f.title} style={{
+              padding: '16px',
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>{f.icon}</span>
+                <strong style={{ fontSize: '0.9rem' }}>{f.title}</strong>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.6', margin: 0 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </details>
 
       {/* Main Grid: Budget Ring + Active Sessions */}
       <div style={{
@@ -506,23 +636,10 @@ export default function DashboardPage() {
                   Provider Context Windows
                 </h4>
                 {Object.entries(metrics.providers).map(([providerId, data]: [string, any]) => {
-                  let name = providerId;
-                  let color = 'var(--text-main)';
-                  let limit = data.contextWindowLimit || 128000;
-                  
-                  if (providerId === 'claude-code') {
-                    name = 'Claude Code';
-                    color = '#a78bfa';
-                  } else if (providerId === 'cursor') {
-                    name = 'Cursor';
-                    color = 'var(--color-secondary)';
-                  } else if (providerId === 'antigravity') {
-                    name = 'Antigravity';
-                    color = 'var(--color-success)';
-                  } else if (providerId === 'copilot') {
-                    name = 'GitHub Copilot';
-                    color = 'var(--color-warning)';
-                  }
+                  const meta = getProviderMeta(providerId);
+                  const name = meta.name;
+                  const color = meta.color;
+                  const limit = data.contextWindowLimit || 128000;
 
                   if (limit === 0) return null;
 
@@ -709,10 +826,30 @@ export default function DashboardPage() {
                 gap: '12px'
               }}>
                 <span style={{ fontSize: '2.5rem' }}>📭</span>
-                <p>No active sessions scanned in workspace yet.</p>
-                <button className="btn btn-secondary" onClick={handleScan} style={{ marginTop: '8px' }}>
-                  Run workspace scan
-                </button>
+                <p style={{ textAlign: 'center', maxWidth: '300px' }}>
+                  No sessions found yet. NextRouter scans AI provider logs to build your session timeline.
+                </p>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-dark)', textAlign: 'center', maxWidth: '280px' }}>
+                  Make sure at least one provider (Claude Code, Cursor, or Antigravity) is active in this workspace, then run a scan.
+                </p>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button className="btn btn-secondary" onClick={handleScan} style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                    🔄 Scan Workspace
+                  </button>
+                  <a href="/walkthrough" style={{
+                    marginTop: '8px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    background: 'var(--color-primary-glow)',
+                    color: 'var(--color-primary)',
+                    border: '1px solid var(--color-primary)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    textDecoration: 'none'
+                  }}>
+                    📖 View Setup Guide
+                  </a>
+                </div>
               </div>
             </>
           ) : (
@@ -731,10 +868,10 @@ export default function DashboardPage() {
               }}>
                 {[
                   { id: 'all', name: 'All Providers', color: 'var(--color-primary)', bg: 'var(--color-primary-glow)' },
-                  { id: 'cursor', name: 'Cursor', color: 'var(--color-secondary)', bg: 'rgba(6, 182, 212, 0.15)' },
-                  { id: 'claude-code', name: 'Claude Code', color: '#a78bfa', bg: 'rgba(139, 92, 246, 0.15)' },
-                  { id: 'antigravity', name: 'Antigravity', color: 'var(--color-success)', bg: 'rgba(16, 185, 129, 0.15)' },
-                  { id: 'copilot', name: 'GitHub Copilot', color: 'var(--color-warning)', bg: 'rgba(245, 158, 11, 0.15)' }
+                  ...(['cursor', 'claude-code', 'antigravity', 'copilot'] as const).map(id => {
+                    const m = getProviderMeta(id);
+                    return { id, name: m.name, color: m.color, bg: m.colorBg };
+                  })
                 ].map(tab => {
                   const isActive = filterProvider === tab.id;
                   return (
@@ -805,27 +942,10 @@ export default function DashboardPage() {
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {filtered.slice(0, 10).map((session) => {
-                      let providerBg = 'rgba(255, 255, 255, 0.05)';
-                      let providerColor = 'var(--text-muted)';
-                      let providerLabel = session.provider_id;
-
-                      if (session.provider_id === 'claude-code') {
-                        providerBg = 'rgba(139, 92, 246, 0.15)';
-                        providerColor = '#a78bfa';
-                        providerLabel = 'Claude Code';
-                      } else if (session.provider_id === 'cursor') {
-                        providerBg = 'rgba(6, 182, 212, 0.15)';
-                        providerColor = 'var(--color-secondary)';
-                        providerLabel = 'Cursor';
-                      } else if (session.provider_id === 'antigravity') {
-                        providerBg = 'rgba(16, 185, 129, 0.15)';
-                        providerColor = 'var(--color-success)';
-                        providerLabel = 'Antigravity';
-                      } else if (session.provider_id === 'copilot') {
-                        providerBg = 'rgba(245, 158, 11, 0.15)';
-                        providerColor = 'var(--color-warning)';
-                        providerLabel = 'Copilot';
-                      }
+                      const sessionMeta = getProviderMeta(session.provider_id);
+                      const providerBg = sessionMeta.colorBg;
+                      const providerColor = sessionMeta.color;
+                      const providerLabel = sessionMeta.name;
 
                       return (
                         <div key={session.id} style={{
@@ -932,27 +1052,10 @@ export default function DashboardPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   {(() => {
-                    let providerBg = 'rgba(255, 255, 255, 0.05)';
-                    let providerColor = 'var(--text-muted)';
-                    let providerLabel = selectedSession.provider_id;
-
-                    if (selectedSession.provider_id === 'claude-code') {
-                      providerBg = 'rgba(139, 92, 246, 0.2)';
-                      providerColor = '#a78bfa';
-                      providerLabel = 'Claude Code';
-                    } else if (selectedSession.provider_id === 'cursor') {
-                      providerBg = 'rgba(6, 182, 212, 0.2)';
-                      providerColor = 'var(--color-secondary)';
-                      providerLabel = 'Cursor';
-                    } else if (selectedSession.provider_id === 'antigravity') {
-                      providerBg = 'rgba(16, 185, 129, 0.2)';
-                      providerColor = 'var(--color-success)';
-                      providerLabel = 'Antigravity';
-                    } else if (selectedSession.provider_id === 'copilot') {
-                      providerBg = 'rgba(245, 158, 11, 0.2)';
-                      providerColor = 'var(--color-warning)';
-                      providerLabel = 'Copilot';
-                    }
+                    const selectedMeta = getProviderMeta(selectedSession.provider_id);
+                    const providerColor = selectedMeta.color;
+                    const providerBg = selectedMeta.colorBg;
+                    const providerLabel = selectedMeta.name;
 
                     return (
                       <span style={{
@@ -1269,10 +1372,10 @@ export default function DashboardPage() {
                           >
                             <option value="">Select target provider...</option>
                             {[
-                              { id: 'claude-code', name: 'Claude Code' },
-                              { id: 'cursor', name: 'Cursor' },
-                              { id: 'antigravity', name: 'Antigravity' },
-                              { id: 'copilot', name: 'GitHub Copilot' }
+                              ...(['claude-code', 'cursor', 'antigravity', 'copilot'] as const).map(id => ({
+                                id,
+                                name: getProviderMeta(id).name
+                              }))
                             ]
                               .filter(p => p.id !== selectedSession?.provider_id)
                               .map(p => (
