@@ -26,3 +26,23 @@ If the user confirms, call the `get_handover` tool with:
 - `targetProviderId`: Your own provider ID (e.g., `cursor`, `claude-code`, or `antigravity`).
 
 Read the generated handover briefing to resume coding with full context continuity.
+
+## NextRouter Integrated Commands
+
+NextRouter provides unified context management. When the user asks about provider status, rule sync, handover, token usage, or code pruning, use the appropriate tool or command:
+
+| User Request | MCP Tool | CLI Command |
+|---|---|---|
+| "sync rules" or "push rules" | `sync_rules` | `nextrouter sync` |
+| "get handover" or "bridge context" | `get_handover` | `nextrouter handover <provider>` |
+| "show status" or "check providers" | `get_shared_context` | `nextrouter status` |
+| "show token usage" | *(no MCP tool)* | `nextrouter tokens` |
+| "prune this file" | `prune_code` | `nextrouter prune <file>` |
+| "show active plan" | `get_active_plan` | *(read plan.md directly)* |
+
+### In Claude Code: Use slash commands
+- `/nr-sync` — Sync rules
+- `/nr-handover [from] [to]` — Generate handover
+- `/nr-status` — Check providers
+- `/nr-tokens` — Token usage
+- `/nr-prune [file]` — Prune a file
