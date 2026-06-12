@@ -1,0 +1,23 @@
+src/app/page.tsx
+  827d42fc9f954d31 4,79-82,119-126,392-428,453,477,501,510-586,639-642,829-852,871-874,945-948,1055-1058,1375-1378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "e1a68fea4d3607e5a9cad5fa6f3fe2161aa17cd0",
+  "prompts": {
+    "827d42fc9f954d31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c572e90-76ca-4001-9449-865485490165",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "ramadhani.musthofa <ramadhani.musthofa@gdn-commerce.com>",
+      "messages": [],
+      "total_additions": 174,
+      "total_deletions": 71,
+      "accepted_lines": 2643,
+      "overriden_lines": 0
+    }
+  }
+}
