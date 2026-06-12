@@ -66,6 +66,7 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [togglingDaemon, setTogglingDaemon] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error'; logs?: string[] } | null>(null);
 
   // Session details & handover states
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
@@ -115,6 +116,11 @@ export default function DashboardPage() {
     }
   }
 
+  function showNotification(message: string, type: 'success' | 'error', logs?: string[]) {
+    setNotification({ message, type, logs });
+    setTimeout(() => setNotification(null), 8000);
+  }
+
   useEffect(() => {
     loadData();
     
@@ -150,7 +156,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ action: 'sync', workspacePath })
       });
       if (res.ok) {
-        alert('Rules synced successfully across all providers!');
+        showNotification('Rules synced successfully across all providers!', 'success');
         await loadData();
       }
     } catch (e) {
@@ -192,13 +198,13 @@ export default function DashboardPage() {
       const res = await fetch('/api/system/setup', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        alert(`Setup completed successfully!\n\n${data.logs.join('\n')}`);
+        showNotification('Setup completed successfully!', 'success', data.logs);
         await loadData();
       } else {
-        alert(`Setup failed: ${data.error || 'Unknown error'}\n\n${(data.logs || []).join('\n')}`);
+        showNotification(`Setup failed: ${data.error || 'Unknown error'}`, 'error', data.logs || []);
       }
     } catch (e: any) {
-      alert(`Setup error: ${e.message || e}`);
+      showNotification(`Setup error: ${e.message || e}`, 'error');
     } finally {
       setSettingUp(false);
     }
@@ -281,7 +287,40 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      
+      {/* Inline notification banner */}
+      {notification && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: notification.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${notification.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: notification.type === 'success' ? '#34d399' : '#f87171', fontWeight: 600, fontSize: '0.9rem' }}>
+              {notification.type === 'success' ? '✓' : '✗'} {notification.message}
+            </span>
+            <button onClick={() => setNotification(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: '0 4px' }}>×</button>
+          </div>
+          {notification.logs && notification.logs.length > 0 && (
+            <div style={{
+              padding: '8px 10px',
+              background: 'rgba(0,0,0,0.2)',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              maxHeight: '120px',
+              overflowY: 'auto'
+            }}>
+              {notification.logs.map((log, i) => <div key={i}>{log}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
