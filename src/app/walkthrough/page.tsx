@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function OnboardingWalkthroughPage() {
   const [activeStep, setActiveStep] = useState('mcp');
@@ -10,6 +10,46 @@ export default function OnboardingWalkthroughPage() {
   const [activeProviderTab, setActiveProviderTab] = useState('claude');
   const [settingUp, setSettingUp] = useState(false);
   const [selectedCliCommand, setSelectedCliCommand] = useState('status');
+  const [pluginStatuses, setPluginStatuses] = useState<Array<{
+    providerId: string;
+    providerName: string;
+    color: string;
+    installed: boolean;
+    installedFiles: string[];
+    missingFiles: string[];
+  }>>([]);
+  const [installingPlugin, setInstallingPlugin] = useState<string>('');
+  const [pluginLogs, setPluginLogs] = useState<Record<string, string[]>>({});
+
+  async function loadPluginStatuses() {
+    try {
+      const res = await fetch('/api/plugins');
+      if (res.ok) {
+        const data = await res.json();
+        setPluginStatuses(data);
+      }
+    } catch (e) {
+      console.error('Error loading plugin statuses:', e);
+    }
+  }
+
+  async function handleInstallPlugin(providerId: string) {
+    setInstallingPlugin(providerId);
+    try {
+      const res = await fetch('/api/plugins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId })
+      });
+      const data = await res.json();
+      setPluginLogs(prev => ({ ...prev, [providerId]: data.logs || [] }));
+      await loadPluginStatuses();
+    } catch (e) {
+      console.error('Error installing plugin:', e);
+    } finally {
+      setInstallingPlugin('');
+    }
+  }
 
   const steps = [
     { id: 'mcp', name: '1. MCP Setup', icon: '🔌' },
@@ -86,6 +126,12 @@ export default function OnboardingWalkthroughPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
+  useEffect(() => {
+    if (activeStep === 'integrations') {
+      loadPluginStatuses();
+    }
+  }, [activeStep]);
 
   async function handleOneClickSetup() {
     setSettingUp(true);
@@ -541,201 +587,150 @@ export default function OnboardingWalkthroughPage() {
         {activeStep === 'integrations' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
             <div>
-              <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)', marginBottom: '8px' }}>🔌 Command &amp; Plugins Feature Integration Plan</h2>
+              <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)', marginBottom: '8px' }}>
+                🔌 Provider Plugin Installation
+              </h2>
               <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
-                We plan to expand NextRouter support by delivering native terminal commands and IDE extensions/plugins. This will enable context sharing and rules management without having to open the web dashboard.
+                Install NextRouter as a native plugin in each AI provider. For Claude Code, this creates global slash commands (<code>/nr-sync</code>, <code>/nr-handover</code>, etc.) available in any project. For Cursor, it creates an MDC rule. For Copilot, it creates VS Code tasks.
               </p>
             </div>
 
-            {/* Premium feature cards */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '24px'
-            }}>
-              {/* Item 1 */}
-              <div className="glass-panel" style={{ 
-                padding: '24px', 
-                border: '1px solid rgba(139, 92, 246, 0.15)',
-                background: 'rgba(139, 92, 246, 0.02)',
-                borderRadius: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontSize: '1.15rem', color: '#a78bfa', fontWeight: 600 }}>🐚 CLI Tool Sync</h3>
-                  <span style={{ fontSize: '0.7rem', background: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', padding: '4px 8px', borderRadius: '4px', fontWeight: 700 }}>AVAILABLE</span>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                  Control bridging and handovers directly from your terminal using standard commands. Run status checks, trigger rule syncs, or spin up the background watcher daemon without leaving your shell.
-                </p>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {pluginStatuses.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading plugin status...</div>
+              ) : (
+                pluginStatuses.map(plugin => (
+                  <div key={plugin.providerId} style={{
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border: `1px solid ${plugin.installed ? plugin.color + '40' : 'var(--border-color)'}`,
+                    background: plugin.installed ? plugin.color + '08' : 'rgba(255,255,255,0.02)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: '16px'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{
+                          width: '10px', height: '10px', borderRadius: '50%',
+                          background: plugin.installed ? plugin.color : 'var(--text-dark)',
+                          boxShadow: plugin.installed ? `0 0 8px ${plugin.color}` : 'none',
+                          flexShrink: 0
+                        }} />
+                        <strong style={{ fontSize: '1rem', color: plugin.installed ? plugin.color : 'var(--text-main)' }}>
+                          {plugin.providerName}
+                        </strong>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: plugin.installed ? plugin.color + '20' : 'rgba(255,255,255,0.05)',
+                          color: plugin.installed ? plugin.color : 'var(--text-muted)',
+                          fontWeight: 700
+                        }}>
+                          {plugin.installed ? 'INSTALLED' : 'NOT INSTALLED'}
+                        </span>
+                      </div>
+                      {plugin.installed && plugin.installedFiles.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {plugin.installedFiles.map(f => (
+                            <code key={f} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                              ✓ {f}
+                            </code>
+                          ))}
+                        </div>
+                      )}
+                      {pluginLogs[plugin.providerId]?.length > 0 && (
+                        <div style={{
+                          marginTop: '4px',
+                          padding: '8px 12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-mono)'
+                        }}>
+                          {pluginLogs[plugin.providerId].map((log, i) => (
+                            <div key={i}>{log}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => handleInstallPlugin(plugin.providerId)}
+                      disabled={installingPlugin === plugin.providerId}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        borderRadius: '8px',
+                        flexShrink: 0,
+                        background: plugin.installed ? 'rgba(255,255,255,0.03)' : 'var(--color-primary-glow)',
+                        color: plugin.installed ? 'var(--text-muted)' : 'var(--color-primary)',
+                        border: '1px solid',
+                        borderColor: plugin.installed ? 'var(--border-color)' : 'var(--color-primary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {installingPlugin === plugin.providerId
+                        ? 'Installing...'
+                        : plugin.installed ? '↺ Reinstall' : '⚡ Install'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
 
-              {/* Item 2 */}
-              <div className="glass-panel" style={{ 
-                padding: '24px', 
-                border: '1px solid rgba(6, 182, 212, 0.15)',
-                background: 'rgba(6, 182, 212, 0.02)',
-                borderRadius: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontSize: '1.15rem', color: '#22d3ee', fontWeight: 600 }}>💬 Slash Commands</h3>
-                  <span style={{ fontSize: '0.7rem', background: 'rgba(6, 182, 212, 0.2)', color: '#22d3ee', padding: '4px 8px', borderRadius: '4px', fontWeight: 700 }}>PLANNED</span>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                  Enable slash commands (e.g. <code>/handoff</code> or <code>/sync</code>) directly in your editor chat terminal when running Claude Code, automatically loading handover packages from the MCP server.
-                </p>
-              </div>
-
-              {/* Item 3 */}
-              <div className="glass-panel" style={{ 
-                padding: '24px', 
-                border: '1px solid rgba(16, 185, 129, 0.15)',
-                background: 'rgba(16, 185, 129, 0.02)',
-                borderRadius: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontSize: '1.15rem', color: '#34d399', fontWeight: 600 }}>🧩 Editor Extension</h3>
-                  <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '4px 8px', borderRadius: '4px', fontWeight: 700 }}>PLANNED</span>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                  A dedicated VS Code/Cursor Extension and JetBrains Plugin that tracks active document focus, cursor selections, and automatically keeps rules updated inside the IDE side panel in real-time.
-                </p>
+            <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.12)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: '#a78bfa' }}>🐚 Claude Code Slash Commands</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                After installing the Claude Code plugin, these slash commands are available globally in any Claude Code session:
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[
+                  { cmd: '/nr-status', desc: 'Show active providers and sessions' },
+                  { cmd: '/nr-sync', desc: 'Sync rules across .cursorrules, CLAUDE.md, GEMINI.md' },
+                  { cmd: '/nr-handover [from] [to]', desc: 'Generate handover from latest session' },
+                  { cmd: '/nr-tokens', desc: 'Show token usage vs context window limits' },
+                  { cmd: '/nr-prune [file]', desc: 'Strip implementation bodies to save tokens' }
+                ].map(({ cmd, desc }) => (
+                  <div key={cmd} style={{ display: 'flex', gap: '12px', alignItems: 'baseline', fontSize: '0.85rem' }}>
+                    <code style={{ color: '#a78bfa', minWidth: '240px', fontFamily: 'var(--font-mono)' }}>{cmd}</code>
+                    <span style={{ color: 'var(--text-muted)' }}>{desc}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Interactive Simulator Section */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.01)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '16px',
-              padding: '28px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px'
-            }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '6px' }}>💻 Interactive CLI Terminal Playground</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
-                  Explore how NextRouter behaves on the command line. Select a CLI command below to simulate its stdout output inside a local macOS terminal session:
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {[
-                  { id: 'status', label: 'nextrouter status', desc: 'Check active workspace states' },
-                  { id: 'sync', label: 'nextrouter sync', desc: 'Sync rules across providers' },
-                  { id: 'tokens', label: 'nextrouter tokens', desc: 'Inspect context budgets' },
-                  { id: 'daemon', label: 'nextrouter daemon status', desc: 'Inspect background worker' }
-                ].map(cmd => (
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>🖥️ Live CLI Terminal Demo</h3>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                {(['status', 'sync', 'tokens', 'daemon'] as const).map(cmd => (
                   <button
-                    key={cmd.id}
-                    onClick={() => setSelectedCliCommand(cmd.id)}
+                    key={cmd}
+                    onClick={() => setSelectedCliCommand(cmd)}
+                    className="btn btn-secondary"
                     style={{
-                      padding: '10px 16px',
-                      borderRadius: '8px',
-                      background: selectedCliCommand === cmd.id ? 'var(--color-primary-glow)' : 'rgba(255, 255, 255, 0.03)',
-                      border: `1px solid ${selectedCliCommand === cmd.id ? 'var(--border-color-active)' : 'var(--border-color)'}`,
-                      color: selectedCliCommand === cmd.id ? 'var(--color-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      fontSize: '0.85rem',
+                      padding: '6px 14px',
+                      fontSize: '0.8rem',
                       fontWeight: 600,
-                      transition: 'all 0.2s ease',
+                      background: selectedCliCommand === cmd ? 'var(--color-primary-glow)' : 'transparent',
+                      color: selectedCliCommand === cmd ? 'var(--color-primary)' : 'var(--text-muted)',
+                      border: '1px solid',
+                      borderColor: selectedCliCommand === cmd ? 'var(--color-primary)' : 'var(--border-color)',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
                     }}
-                    title={cmd.desc}
                   >
-                    <code>{cmd.label}</code>
+                    {mockCliOutputs[cmd].cmd}
                   </button>
                 ))}
               </div>
-
-              {/* Terminal Window Mockup */}
-              <div style={{
-                background: '#07080c',
-                border: '1px solid #1f2937',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.85rem',
-                color: '#e5e7eb'
-              }}>
-                {/* Terminal Header Bar */}
-                <div style={{
-                  background: '#111827',
-                  padding: '10px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  borderBottom: '1px solid #1f2937'
-                }}>
-                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
-                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                  <span style={{ marginLeft: 'auto', marginRight: 'auto', fontSize: '0.75rem', color: '#9ca3af', fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
-                    zsh — nextrouter CLI
-                  </span>
-                </div>
-
-                {/* Terminal Body */}
-                <div style={{ padding: '20px', minHeight: '220px', lineHeight: '1.6', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
-                  <div style={{ color: '#9ca3af', marginBottom: '8px' }}>Last login: Fri Jun 12 06:25:40 on ttys003</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <span style={{ color: '#34d399' }}>ramadhani@mbp</span>
-                    <span style={{ color: '#818cf8' }}>~/Work/nextrouter</span>
-                    <span style={{ color: '#f472b6' }}>🌿 main</span>
-                  </div>
-                  <div style={{ marginBottom: '16px' }}>
-                    <span style={{ color: '#38bdf8', marginRight: '8px' }}>$</span>
-                    <span style={{ fontWeight: 'bold' }}>{mockCliOutputs[selectedCliCommand].cmd}</span>
-                  </div>
-                  <div style={{ animation: 'fadeIn 0.15s ease-out' }}>
-                    {mockCliOutputs[selectedCliCommand].output}
-                  </div>
-                  <div style={{ display: 'inline-block', width: '8px', height: '15px', background: '#e5e7eb', marginLeft: '4px', verticalAlign: 'middle', animation: 'blink 1s infinite', marginTop: '12px' }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Extension Blueprint and roadmap */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>📋</span> IDE Extension &amp; Slash Command Roadmap
-              </h3>
-              
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                gap: '24px'
-              }}>
-                <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                  <h4 style={{ color: '#e2e8f0', fontWeight: 600, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: '#a78bfa' }}>●</span> VS Code &amp; Cursor Extension API
-                  </h4>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                    <li><strong>Focus Tracking:</strong> Listen to <code>onDidChangeActiveTextEditor</code> to dynamically push the active file name to NextRouter context.</li>
-                    <li><strong>Interactive Sidebar:</strong> Sidebar view showing token metrics, Git status, and a one-click manual bridge copy block.</li>
-                    <li><strong>Diagnostic Sync:</strong> Feed compilation errors directly to NextRouter's memory, giving target assistants context on recent compile breaks.</li>
-                  </ul>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                  <h4 style={{ color: '#e2e8f0', fontWeight: 600, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: '#22d3ee' }}>●</span> Slash Commands Protocol
-                  </h4>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                    <li><strong>/handoff:</strong> Instantly fetches the latest session context from the other assistant and writes a summarized briefing inside the chat editor.</li>
-                    <li><strong>/sync:</strong> Force-refreshes all configuration rules, custom skills, and system profiles on-demand.</li>
-                    <li><strong>/prune:</strong> Runs the Interactive Code Pruner directly on files in scope inside the chat context to save input budget.</li>
-                  </ul>
-                </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', lineHeight: '1.7', color: '#e2e8f0' }}>
+                <div style={{ marginBottom: '6px', color: '#64748b' }}>$ {mockCliOutputs[selectedCliCommand].cmd}</div>
+                {mockCliOutputs[selectedCliCommand].output}
               </div>
             </div>
           </div>
