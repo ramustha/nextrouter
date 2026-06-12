@@ -1,0 +1,23 @@
+src/app/api/system/setup/route.ts
+  827d42fc9f954d31 4,9,20-26,30,32-34,39-42,50,53-54,58,61-69,76,80,85,89,91,97,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "8abd9579df070ea411d22be6e864fc3fec07cbe0",
+  "prompts": {
+    "827d42fc9f954d31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c572e90-76ca-4001-9449-865485490165",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "ramadhani.musthofa <ramadhani.musthofa@gdn-commerce.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1449,
+      "overriden_lines": 0
+    }
+  }
+}
