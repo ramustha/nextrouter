@@ -36,7 +36,10 @@ function getIntegrationFiles(providerId: string, workspacePath: string): string[
       return ['nr-status', 'nr-sync', 'nr-handover', 'nr-tokens', 'nr-prune']
         .map(id => path.join(claudeCommandsDir, `${id}.md`));
     case 'cursor':
-      return [path.join(workspacePath, '.cursor', 'rules', 'nextrouter-commands.mdc')];
+      return [
+        path.join(workspacePath, '.cursor', 'rules', 'nextrouter-commands.mdc'),
+        path.join(workspacePath, '.cursor', 'mcp.json')
+      ];
     case 'antigravity':
       return [path.join(workspacePath, 'GEMINI.md')];
     case 'copilot':
@@ -83,9 +86,18 @@ export function uninstallPlugin(providerId: string, workspacePath: string): stri
         logs.push(`Removed: ${file}`);
       }
     } else if (providerId === 'cursor') {
-      if (fs.existsSync(file)) {
+      if (file.endsWith('nextrouter-commands.mdc') && fs.existsSync(file)) {
         fs.unlinkSync(file);
-        logs.push(`Removed: ${file}`);
+        logs.push(`Removed: .cursor/rules/nextrouter-commands.mdc`);
+      } else if (file.endsWith('mcp.json') && fs.existsSync(file)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (config.mcpServers?.nextrouter) {
+            delete config.mcpServers.nextrouter;
+            fs.writeFileSync(file, JSON.stringify(config, null, 2), 'utf8');
+            logs.push(`Removed nextrouter entry from .cursor/mcp.json`);
+          }
+        } catch {}
       }
     } else if (providerId === 'antigravity') {
       removeNextrouterBlockFromFile(file, '<!-- NEXTROUTER_COMMANDS_START -->', '<!-- NEXTROUTER_COMMANDS_END -->');
@@ -176,43 +188,80 @@ function installCursorMdc(workspacePath: string, cliCmd: string, logs: string[])
     fs.mkdirSync(rulesDir, { recursive: true });
   }
 
+  const mcpPath = path.resolve(workspacePath, 'src', 'cli', 'mcp.ts');
+
   const mdcContent = `---
-description: NextRouter context management commands and MCP tools
+description: NextRouter context management — MCP tools and CLI commands
 globs: ["**/*"]
 alwaysApply: true
 ---
 
-# NextRouter Commands & MCP Integration
+# NextRouter — Context Management via MCP
 
-NextRouter is installed as an MCP server in this workspace. Use its tools for context management:
+NextRouter is registered as an MCP server in this workspace (\`.cursor/mcp.json\`). Call its tools proactively whenever the user needs context management, handovers, or token budget awareness.
 
-## Available MCP Tools
-- \`get_shared_context\` — Get current shared context across all AI providers
-- \`save_context\` — Save/update current conversation context
-- \`get_handover\` — Generate portable handover packet to another provider
-- \`sync_rules\` — Synchronize .cursorrules, CLAUDE.md, GEMINI.md across providers
-- \`prune_code\` — Strip implementation bodies from a file to save tokens
-- \`get_active_plan\` — Read active plan.md from workspace
+## MCP Tools — When and How to Call Them
 
-## When to Use
-- User switches from Claude Code or Antigravity → call \`get_handover\` to reconstruct context
-- User asks to sync rules → call \`sync_rules\` with the current workspace path
-- File is too large for context → call \`prune_code\` with the file path
-- User asks for status → call \`get_shared_context\`
+### \`get_shared_context\` (no parameters)
+Call this when: user asks "what were we working on?", "what's the current status?", or when starting a new chat after a break.
+Returns: the most recent active session title, provider, token count, and last few messages.
+
+### \`save_context\` (parameters: providerId, title, messages)
+Call this when: user says "save this session", "checkpoint this", or at natural stopping points.
+Example call:
+\`\`\`json
+{ "providerId": "cursor", "title": "Fixing auth middleware bug", "messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}] }
+\`\`\`
+
+### \`get_handover\` (parameters: sourceProviderId, targetProviderId?)
+Call this when: user says "I want to continue this in Claude", "hand this off to Antigravity", or "generate a briefing".
+Example call: \`{ "sourceProviderId": "cursor", "targetProviderId": "claude-code" }\`
+Returns: a full Markdown handover packet the user can paste into the target provider.
+
+### \`sync_rules\` (parameters: workspacePath)
+Call this when: user says "sync my rules", "update all provider configs", or after editing .cursorrules.
+Example call: \`{ "workspacePath": "${workspacePath}" }\`
+
+### \`prune_code\` (parameters: filepath, write?)
+Call this when: a file is too large to fit in context, or user says "prune this file", "trim the implementation".
+Example call: \`{ "filepath": "src/adapters/cursor.ts", "write": false }\`
+Returns: pruned outline + token savings report.
+
+### \`get_active_plan\` (parameters: workspacePath)
+Call this when: user asks "what's the plan?", "show me the current roadmap", or when starting a new feature.
+Example call: \`{ "workspacePath": "${workspacePath}" }\`
 
 ## CLI Commands (via Terminal)
 \`\`\`bash
-${cliCmd} status       # Show active providers and sessions
-${cliCmd} sync         # Sync rules across all providers
-${cliCmd} handover cursor claude-code  # Generate handover
-${cliCmd} tokens       # Show token usage
-${cliCmd} prune src/file.ts  # Prune a file
+${cliCmd} status        # Show detected providers and active sessions
+${cliCmd} sync          # Sync .cursorrules, CLAUDE.md, GEMINI.md
+${cliCmd} handover cursor claude-code  # Generate a handover packet
+${cliCmd} tokens        # Show token usage vs context window limits
+${cliCmd} prune src/adapters/cursor.ts  # Prune a file
 \`\`\`
 `;
 
-  const filePath = path.join(rulesDir, 'nextrouter-commands.mdc');
-  fs.writeFileSync(filePath, mdcContent, 'utf8');
+  const mdcFilePath = path.join(rulesDir, 'nextrouter-commands.mdc');
+  fs.writeFileSync(mdcFilePath, mdcContent, 'utf8');
   logs.push(`Cursor MDC rule installed: .cursor/rules/nextrouter-commands.mdc`);
+
+  // Register MCP server in .cursor/mcp.json
+  const cursorDir = path.join(workspacePath, '.cursor');
+  if (!fs.existsSync(cursorDir)) {
+    fs.mkdirSync(cursorDir, { recursive: true });
+  }
+  const cursorMcpPath = path.join(cursorDir, 'mcp.json');
+  let cursorMcpConfig: any = {};
+  if (fs.existsSync(cursorMcpPath)) {
+    try { cursorMcpConfig = JSON.parse(fs.readFileSync(cursorMcpPath, 'utf8')); } catch {}
+  }
+  if (!cursorMcpConfig.mcpServers) cursorMcpConfig.mcpServers = {};
+  cursorMcpConfig.mcpServers.nextrouter = {
+    command: 'npx',
+    args: ['tsx', mcpPath]
+  };
+  fs.writeFileSync(cursorMcpPath, JSON.stringify(cursorMcpConfig, null, 2), 'utf8');
+  logs.push(`Cursor MCP server registered: .cursor/mcp.json`);
 }
 
 function installAntigravityGeminiMd(workspacePath: string, cliCmd: string, logs: string[]): void {
