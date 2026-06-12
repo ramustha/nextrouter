@@ -1,0 +1,23 @@
+skills/mcp-shared-context.md
+  827d42fc9f954d31 29-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.23",
+  "base_commit_sha": "5980b6002b785a3532294dfb9d35278a1f547b1f",
+  "prompts": {
+    "827d42fc9f954d31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c572e90-76ca-4001-9449-865485490165",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "ramadhani.musthofa <ramadhani.musthofa@gdn-commerce.com>",
+      "messages": [],
+      "total_additions": 59,
+      "total_deletions": 111,
+      "accepted_lines": 1471,
+      "overriden_lines": 0
+    }
+  }
+}
