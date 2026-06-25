@@ -12,10 +12,60 @@ export interface PluginStatus {
   missingFiles: string[];
 }
 
+let cachedPluginStatus: { [path: string]: { status: PluginStatus[]; timestamp: number } } = {};
+
 export function getPluginStatus(workspacePath: string): PluginStatus[] {
-  return PROVIDER_PLUGINS.map(plugin => {
-    const files = getIntegrationFiles(plugin.providerId, workspacePath);
-    const installed = files.length > 0 && files.every(f => fs.existsSync(f));
+  const now = Date.now();
+  const cacheKey = workspacePath || 'default';
+  const cached = cachedPluginStatus[cacheKey];
+  if (cached && (now - cached.timestamp < 10000)) {
+    return cached.status;
+  }
+
+  const status = PROVIDER_PLUGINS.map(plugin => {
+    let files = getIntegrationFiles(plugin.providerId, workspacePath);
+    let installed = false;
+
+    if (plugin.providerId === 'cursor') {
+      const mdcFile = path.join(workspacePath, '.cursor', 'rules', 'nextrouter-commands.mdc');
+      const localMcpFile = path.join(workspacePath, '.cursor', 'mcp.json');
+      const globalMcpFile = path.join(os.homedir(), '.cursor', 'mcp.json');
+
+      const mdcExists = fs.existsSync(mdcFile);
+      let localMcpExists = fs.existsSync(localMcpFile);
+      let globalMcpExists = false;
+
+      if (localMcpExists) {
+        try {
+          const config = JSON.parse(fs.readFileSync(localMcpFile, 'utf8'));
+          if (config.mcpServers?.nextrouter) {
+            localMcpExists = true;
+          } else {
+            localMcpExists = false;
+          }
+        } catch {
+          localMcpExists = false;
+        }
+      }
+
+      if (fs.existsSync(globalMcpFile)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(globalMcpFile, 'utf8'));
+          if (config.mcpServers?.nextrouter) {
+            globalMcpExists = true;
+          }
+        } catch {}
+      }
+
+      installed = mdcExists && (localMcpExists || globalMcpExists);
+
+      if (globalMcpExists) {
+        files = [mdcFile];
+      }
+    } else {
+      installed = files.length > 0 && files.every(f => fs.existsSync(f));
+    }
+
     const installedFiles = files.filter(f => fs.existsSync(f));
     const missingFiles = files.filter(f => !fs.existsSync(f));
     return {
@@ -27,14 +77,24 @@ export function getPluginStatus(workspacePath: string): PluginStatus[] {
       missingFiles
     };
   });
+
+  cachedPluginStatus[cacheKey] = { status, timestamp: now };
+  return status;
+}
+
+export function clearPluginStatusCache() {
+  cachedPluginStatus = {};
 }
 
 function getIntegrationFiles(providerId: string, workspacePath: string): string[] {
   const claudeCommandsDir = path.join(os.homedir(), '.claude', 'commands');
   switch (providerId) {
     case 'claude-code':
-      return ['nr-status', 'nr-sync', 'nr-handover', 'nr-tokens', 'nr-prune']
-        .map(id => path.join(claudeCommandsDir, `${id}.md`));
+      return [
+        path.join(workspacePath, 'CLAUDE.md'),
+        ...['nr-status', 'nr-sync', 'nr-handover', 'nr-tokens', 'nr-prune']
+          .map(id => path.join(claudeCommandsDir, `${id}.md`))
+      ];
     case 'cursor':
       return [
         path.join(workspacePath, '.cursor', 'rules', 'nextrouter-commands.mdc'),
@@ -64,7 +124,7 @@ export function installPlugin(providerId: string, workspacePath: string): string
 
   switch (providerId) {
     case 'claude-code':
-      installClaudeCodeCommands(cliCmd, logs);
+      installClaudeCodeCommands(workspacePath, cliCmd, logs);
       break;
     case 'cursor':
       installCursorMdc(workspacePath, cliCmd, logs);
@@ -78,6 +138,23 @@ export function installPlugin(providerId: string, workspacePath: string): string
     default:
       logs.push(`Unknown provider: ${providerId}`);
   }
+
+  clearPluginStatusCache();
+  try {
+    const { clearActiveProvidersCache } = require('../adapters/registry');
+    clearActiveProvidersCache();
+  } catch (e) {}
+
+  // Trigger rules sync in background so new plugin immediately has skills and plans injected
+  try {
+    const { pullRules, pushRules } = require('../engine/rules-sync');
+    pullRules(workspacePath)
+      .then(() => pushRules(workspacePath))
+      .catch((err: any) => console.error('Error syncing rules in installPlugin:', err));
+  } catch (syncErr) {
+    // Ignore require or run errors
+  }
+
   return logs;
 }
 
@@ -87,8 +164,13 @@ export function uninstallPlugin(providerId: string, workspacePath: string): stri
   for (const file of files) {
     if (providerId === 'claude-code') {
       if (fs.existsSync(file)) {
-        fs.unlinkSync(file);
-        logs.push(`Removed: ${file}`);
+        if (file.endsWith('CLAUDE.md')) {
+          removeNextrouterBlockFromFile(file, '<!-- NEXTROUTER_COMMANDS_START -->', '<!-- NEXTROUTER_COMMANDS_END -->');
+          logs.push(`Removed NextRouter commands block from CLAUDE.md`);
+        } else {
+          fs.unlinkSync(file);
+          logs.push(`Removed: ${file}`);
+        }
       }
     } else if (providerId === 'cursor') {
       if (file.endsWith('nextrouter-commands.mdc') && fs.existsSync(file)) {
@@ -127,10 +209,17 @@ export function uninstallPlugin(providerId: string, workspacePath: string): stri
       }
     }
   }
+  
+  clearPluginStatusCache();
+  try {
+    const { clearActiveProvidersCache } = require('../adapters/registry');
+    clearActiveProvidersCache();
+  } catch (e) {}
+
   return logs;
 }
 
-function installClaudeCodeCommands(cliCmd: string, logs: string[]): void {
+function installClaudeCodeCommands(workspacePath: string, cliCmd: string, logs: string[]): void {
   const claudeCommandsDir = path.join(os.homedir(), '.claude', 'commands');
   if (!fs.existsSync(claudeCommandsDir)) {
     fs.mkdirSync(claudeCommandsDir, { recursive: true });
@@ -196,6 +285,54 @@ Show the pruned output and token savings report to the user. Remind them to add 
     fs.writeFileSync(filePath, content, 'utf8');
     logs.push(`Claude Code command installed: ~/.claude/commands/${filename}`);
   }
+
+  // Workspace-level CLAUDE.md
+  const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
+  const block = `
+
+<!-- NEXTROUTER_COMMANDS_START -->
+## NextRouter — Context Management via MCP
+
+NextRouter is registered as an MCP server. Call its tools proactively to manage context across AI providers.
+
+### When to Call Each Tool
+
+**\`get_shared_context\`** (no params) — Call when user asks "what were we working on?", "what's the current status?", or starting a new session.
+
+**\`save_context\`** (providerId, title, messages) — Call when user says "save this session", "checkpoint this", or at natural stopping points.
+Example: \`{ "providerId": "claude-code", "title": "Refactoring auth module", "messages": [...] }\`
+
+**\`get_handover\`** (sourceProviderId, targetProviderId?) — Call when user says "continue this in Cursor", "hand off to Cursor", "generate a briefing".
+Example: \`{ "sourceProviderId": "claude-code", "targetProviderId": "cursor" }\`
+
+**\`sync_rules\`** (workspacePath) — Call when user says "sync rules", "update configs", or after editing CLAUDE.md.
+Example: \`{ "workspacePath": "${workspacePath}" }\`
+
+**\`prune_code\`** (filepath, write?) — Call when a file is too large for context, or user says "prune this file".
+Example: \`{ "filepath": "src/adapters/cursor.ts", "write": false }\`
+
+**\`get_active_plan\`** (workspacePath) — Call when user asks "what's the plan?" or starting a new feature.
+Example: \`{ "workspacePath": "${workspacePath}" }\`
+
+### CLI Commands (via Terminal)
+\`\`\`bash
+${cliCmd} status         # Show detected providers and active sessions
+${cliCmd} sync           # Sync CLAUDE.md, GEMINI.md, .cursorrules
+${cliCmd} handover claude-code cursor  # Generate handover packet
+${cliCmd} tokens         # Show token usage vs context window limits
+${cliCmd} prune src/adapters/cursor.ts  # Prune a file
+\`\`\`
+<!-- NEXTROUTER_COMMANDS_END -->`;
+
+  let existing = '';
+  if (fs.existsSync(claudeMdPath)) {
+    existing = fs.readFileSync(claudeMdPath, 'utf8');
+    existing = existing
+      .replace(/<!-- NEXTROUTER_COMMANDS_START -->[\s\S]*<!-- NEXTROUTER_COMMANDS_END -->/, '')
+      .trim();
+  }
+  fs.writeFileSync(claudeMdPath, existing + block, 'utf8');
+  logs.push(`CLAUDE.md updated with proactive NextRouter tool guidance`);
 }
 
 function installCursorMdc(workspacePath: string, cliCmd: string, logs: string[]): void {
@@ -278,6 +415,24 @@ ${cliCmd} prune src/adapters/cursor.ts  # Prune a file
   };
   fs.writeFileSync(cursorMcpPath, JSON.stringify(cursorMcpConfig, null, 2), 'utf8');
   logs.push(`Cursor MCP server registered: .cursor/mcp.json`);
+
+  // Register MCP server in ~/.cursor/mcp.json (global)
+  const globalCursorDir = path.join(os.homedir(), '.cursor');
+  if (!fs.existsSync(globalCursorDir)) {
+    fs.mkdirSync(globalCursorDir, { recursive: true });
+  }
+  const globalCursorMcpPath = path.join(globalCursorDir, 'mcp.json');
+  let globalCursorMcpConfig: any = {};
+  if (fs.existsSync(globalCursorMcpPath)) {
+    try { globalCursorMcpConfig = JSON.parse(fs.readFileSync(globalCursorMcpPath, 'utf8')); } catch {}
+  }
+  if (!globalCursorMcpConfig.mcpServers) globalCursorMcpConfig.mcpServers = {};
+  globalCursorMcpConfig.mcpServers.nextrouter = {
+    command: 'npx',
+    args: ['tsx', mcpPath]
+  };
+  fs.writeFileSync(globalCursorMcpPath, JSON.stringify(globalCursorMcpConfig, null, 2), 'utf8');
+  logs.push(`Cursor Global MCP server registered: ~/.cursor/mcp.json`);
 }
 
 function installAntigravityGeminiMd(workspacePath: string, cliCmd: string, logs: string[]): void {
@@ -349,7 +504,43 @@ ${cliCmd} prune src/adapters/antigravity.ts  # Prune a file
   };
   fs.writeFileSync(geminiSettingsPath, JSON.stringify(geminiSettings, null, 2), 'utf8');
   logs.push(`Antigravity MCP server registered: ~/.gemini/settings.json`);
+
+  // Copy workflow files to global customizations root
+  copyAntigravityGlobalWorkflows(workspacePath, logs);
 }
+
+function copyAntigravityGlobalWorkflows(workspacePath: string, logs: string[]): void {
+  const sourceDir = path.join(workspacePath, '.agent', 'workflows');
+  if (!fs.existsSync(sourceDir)) {
+    logs.push(`Warning: Source workflows directory not found in workspace: ${sourceDir}`);
+    return;
+  }
+
+  const targets = [
+    path.join(os.homedir(), '.gemini', 'config', 'workflows'),
+    path.join(os.homedir(), '.gemini', 'antigravity', 'global_workflows')
+  ];
+
+  try {
+    const files = fs.readdirSync(sourceDir);
+    for (const targetDir of targets) {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      for (const file of files) {
+        if (file.endsWith('.md')) {
+          const srcFile = path.join(sourceDir, file);
+          const destFile = path.join(targetDir, file);
+          fs.copyFileSync(srcFile, destFile);
+        }
+      }
+      logs.push(`Copied global workflows to: ${targetDir.replace(os.homedir(), '~')}`);
+    }
+  } catch (err: any) {
+    logs.push(`Error copying global workflows: ${err.message}`);
+  }
+}
+
 
 function installCopilotPlugin(workspacePath: string, cliCmd: string, logs: string[]): void {
   const githubDir = path.join(workspacePath, '.github');

@@ -11,6 +11,7 @@ export interface Message {
   content: string;
   timestamp?: string;
   tokens?: number;
+  sender?: string;
 }
 
 export interface Session {
@@ -30,6 +31,15 @@ export interface ContextMetrics {
   filesSizeLimit?: number;
   budgetUsedPercent: number; // percentage of target context window
   contextWindowLimit?: number; // total context window limit size
+  
+  // Rate limits per hourly/weekly requests
+  hourlyMessagesLimit?: number;
+  hourlyMessagesUsed?: number;
+  hourlyResetMinutes?: number;
+  
+  weeklyMessagesLimit?: number;
+  weeklyMessagesUsed?: number;
+  weeklyResetDays?: number;
 }
 
 export interface HandoverPacket {

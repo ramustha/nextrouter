@@ -1,5 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { createServer } from 'http';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -8,10 +10,13 @@ import {
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
+import path from 'path';
 import { getDatabase } from '../store/database';
+import { adapters } from '../adapters/registry';
 import { generateHandover } from '../engine/handover';
 import { pullRules, pushRules } from '../engine/rules-sync';
 import { countTokens } from '../engine/tokenizer';
+import { getGitWorktrees } from '../git/git-helper';
 
 const server = new Server(
   {
@@ -35,7 +40,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: 'Get the current shared context, including active tasks, files, and recent summaries.',
         inputSchema: {
           type: 'object',
-          properties: {}
+          properties: {
+            workspacePath: { type: 'string', description: 'Absolute path to the current workspace directory to filter sessions' }
+          }
         }
       },
       {
@@ -69,7 +76,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: 'object',
           properties: {
             sourceProviderId: { type: 'string', description: 'ID of the current provider' },
-            targetProviderId: { type: 'string', description: 'ID of the destination provider' }
+            targetProviderId: { type: 'string', description: 'ID of the destination provider' },
+            workspacePath: { type: 'string', description: 'Absolute path to the current workspace directory to filter sessions' }
           },
           required: ['sourceProviderId']
         }
@@ -113,6 +121,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 // Tool call handler
+async function syncSessionsIntoDB(workspacePath: string) {
+  const db = getDatabase();
+  const sessionsToUpsert: any[] = [];
+  for (const provider of adapters) {
+    try {
+      const providerSessions = await provider.getSessions(workspacePath);
+      for (const s of providerSessions) {
+        sessionsToUpsert.push({
+          id: s.id,
+          provider_id: provider.id,
+          title: s.title,
+          started_at: s.startedAt,
+          last_active_at: s.lastActiveAt,
+          status: s.status,
+          token_count: s.tokenCount,
+          messages: s.messages,
+          workspace_path: s.workspacePath
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to sync sessions for ${provider.id} in MCP:`, e);
+    }
+  }
+  if (sessionsToUpsert.length > 0) {
+    db.sessions.upsertMany(sessionsToUpsert);
+  }
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const db = getDatabase();
   const { name, arguments: args } = request.params;
@@ -120,13 +156,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case 'get_shared_context': {
-        const sessions = db.sessions.all();
+        const { workspacePath } = args as any;
+        const resolvePath = workspacePath || process.cwd();
+        await syncSessionsIntoDB(resolvePath);
+
+        let sessions = db.sessions.all();
+
+        if (workspacePath) {
+          const worktrees = getGitWorktrees(workspacePath).map(p => path.resolve(p));
+          sessions = sessions.filter(s => 
+            s.workspace_path && 
+            worktrees.includes(path.resolve(s.workspace_path))
+          );
+        }
+
         const activeSessions = sessions.filter(s => s.status === 'active');
         const latestSession = activeSessions.sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime())[0];
         
         if (!latestSession) {
+          const workspaceMsg = workspacePath ? ` in workspace ${workspacePath}` : '';
           return {
-            content: [{ type: 'text', text: 'No active shared context available. Start a session or save context first.' }]
+            content: [{ type: 'text', text: `No active shared context available${workspaceMsg}. Start a session or save context first.` }]
           };
         }
 
@@ -140,6 +190,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 providerId: latestSession.provider_id,
                 lastActiveAt: latestSession.last_active_at,
                 tokenCount: latestSession.token_count,
+                workspacePath: latestSession.workspace_path,
                 recentMessages: latestSession.messages?.slice(-3) || []
               }, null, 2)
             }
@@ -191,13 +242,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_handover': {
-        const { sourceProviderId, targetProviderId } = args as any;
-        const sessions = db.sessions.all().filter(s => s.provider_id === sourceProviderId);
+        const { sourceProviderId, targetProviderId, workspacePath, handoverType } = args as any;
+        const resolvePath = workspacePath || process.cwd();
+        await syncSessionsIntoDB(resolvePath);
+
+        let sessions = db.sessions.all().filter(s => s.provider_id === sourceProviderId);
+
+        if (workspacePath) {
+          const worktrees = getGitWorktrees(workspacePath).map(p => path.resolve(p));
+          sessions = sessions.filter(s => 
+            s.workspace_path && 
+            worktrees.includes(path.resolve(s.workspace_path))
+          );
+        }
+
         const latestSession = sessions.sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime())[0];
 
         if (!latestSession) {
+          const workspaceMsg = workspacePath ? ` in workspace ${workspacePath}` : '';
           return {
-            content: [{ type: 'text', text: `No sessions found for provider ${sourceProviderId}.` }]
+            content: [{ type: 'text', text: `No sessions found for provider ${sourceProviderId}${workspaceMsg}.` }]
           };
         }
 
@@ -208,10 +272,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           lastActiveAt: latestSession.last_active_at,
           status: latestSession.status as 'active' | 'archived',
           tokenCount: latestSession.token_count,
-          messages: latestSession.messages
+          messages: latestSession.messages,
+          workspacePath: latestSession.workspace_path
         };
 
-        const packet = generateHandover(sourceProviderId, normalizedSession, targetProviderId);
+        const packet = generateHandover(sourceProviderId, normalizedSession, targetProviderId, handoverType);
         
         return {
           content: [
@@ -285,35 +350,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_active_plan': {
         const { workspacePath } = args as any;
         const fs = await import('fs');
-        const path = await import('path');
+        const { findPlanFiles } = await import('../adapters/utils');
         
-        const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
-        let planContent = '';
-        let foundFile = '';
-        
-        for (const name of possibleNames) {
-          const filePath = path.join(workspacePath, name);
-          if (fs.existsSync(filePath)) {
-            planContent = fs.readFileSync(filePath, 'utf8').trim();
-            foundFile = name;
-            break;
-          }
-        }
-        
-        if (!planContent) {
+        const plans = findPlanFiles(workspacePath);
+        if (plans.length === 0) {
           return {
-            content: [{ type: 'text', text: 'No active plan.md or implementation_plan.md found in the workspace.' }]
+            content: [{ type: 'text', text: 'No active plan file found in the workspace.' }]
           };
         }
         
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Active Plan loaded from ${foundFile}:\n\n${planContent}`
-            }
-          ]
-        };
+        const activePlan = plans[0];
+        try {
+          const planContent = fs.readFileSync(activePlan.path, 'utf8').trim();
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Active Plan loaded from ${activePlan.name}:\n\n${planContent}`
+              }
+            ]
+          };
+        } catch (e: any) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Failed to read active plan: ${e.message}` }]
+          };
+        }
       }
 
       default:
@@ -364,15 +426,17 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
   if (uri === 'nextrouter://plan') {
     const fs = await import('fs');
-    const path = await import('path');
-    const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
+    const { findPlanFiles } = await import('../adapters/utils');
+    const plans = findPlanFiles(process.cwd());
     let planContent = '';
+    let foundFile = '';
     
-    for (const name of possibleNames) {
-      const filePath = path.join(process.cwd(), name);
-      if (fs.existsSync(filePath)) {
-        planContent = fs.readFileSync(filePath, 'utf8').trim();
-        break;
+    if (plans.length > 0) {
+      try {
+        planContent = fs.readFileSync(plans[0].path, 'utf8').trim();
+        foundFile = plans[0].name;
+      } catch (e) {
+        // ignore
       }
     }
     
@@ -380,7 +444,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       contents: [{
         uri,
         mimeType: 'text/markdown',
-        text: planContent || 'No active plan found.'
+        text: planContent ? `Active Plan (${foundFile}):\n\n${planContent}` : 'No active plan found.'
       }]
     };
   }
@@ -422,4 +486,48 @@ export async function runMcpServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('NextRouter MCP Server running on stdio');
+}
+
+export async function runMcpSseServer(port: number) {
+  let transport: SSEServerTransport | null = null;
+
+  const serverHttp = createServer((req, res) => {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    if (req.url === '/sse' && req.method === 'GET') {
+      transport = new SSEServerTransport('/message', res);
+      server.connect(transport).catch(err => {
+        console.error('Error connecting SSE transport:', err);
+      });
+      return;
+    }
+
+    if (req.url === '/message' && req.method === 'POST') {
+      if (!transport) {
+        res.writeHead(400);
+        res.end('SSE connection not established');
+        return;
+      }
+      transport.handlePostMessage(req, res).catch(err => {
+        console.error('Error handling post message:', err);
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end('Not Found');
+  });
+
+  serverHttp.listen(port, () => {
+    console.error(`NextRouter MCP Server running on SSE at http://localhost:${port}/sse`);
+  });
 }

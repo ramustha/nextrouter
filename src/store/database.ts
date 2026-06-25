@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { fileURLToPath } from 'url';
 
 export interface ProviderRow {
   id: string;
@@ -98,7 +100,7 @@ class JsonDatabase {
         const raw = fs.readFileSync(this.filePath, 'utf8');
         return JSON.parse(raw);
       } catch (e) {
-        console.error('Failed to parse database file, initializing empty:', e);
+        console.error(`Failed to parse database file [${this.filePath}], initializing empty:`, e);
       }
     }
 
@@ -156,6 +158,17 @@ class JsonDatabase {
           this.data.providers.push(provider);
         }
         this.persist();
+      },
+      upsertMany: (providers: ProviderRow[]) => {
+        for (const provider of providers) {
+          const idx = this.data.providers.findIndex(p => p.id === provider.id);
+          if (idx >= 0) {
+            this.data.providers[idx] = { ...this.data.providers[idx], ...provider };
+          } else {
+            this.data.providers.push(provider);
+          }
+        }
+        this.persist();
       }
     };
   }
@@ -171,6 +184,17 @@ class JsonDatabase {
           this.data.sessions[idx] = { ...this.data.sessions[idx], ...session };
         } else {
           this.data.sessions.push(session);
+        }
+        this.persist();
+      },
+      upsertMany: (sessions: SessionRow[]) => {
+        for (const session of sessions) {
+          const idx = this.data.sessions.findIndex(s => s.id === session.id);
+          if (idx >= 0) {
+            this.data.sessions[idx] = { ...this.data.sessions[idx], ...session };
+          } else {
+            this.data.sessions.push(session);
+          }
         }
         this.persist();
       },
@@ -208,6 +232,17 @@ class JsonDatabase {
           this.data.rules[idx] = { ...this.data.rules[idx], ...rule };
         } else {
           this.data.rules.push(rule);
+        }
+        this.persist();
+      },
+      upsertMany: (rules: RuleRow[]) => {
+        for (const rule of rules) {
+          const idx = this.data.rules.findIndex(r => r.id === rule.id);
+          if (idx >= 0) {
+            this.data.rules[idx] = { ...this.data.rules[idx], ...rule };
+          } else {
+            this.data.rules.push(rule);
+          }
         }
         this.persist();
       },
@@ -267,23 +302,34 @@ class JsonDatabase {
 }
 
 export function getDatabasePath(): string {
-  let currentDir = process.cwd();
-  while (currentDir !== path.parse(currentDir).root) {
-    if (fs.existsSync(path.join(currentDir, 'package.json'))) {
-      const dataDir = path.join(currentDir, 'data');
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      return path.join(dataDir, 'db.json');
+  let baseDir = process.cwd();
+  
+  try {
+    if (typeof __dirname !== 'undefined') {
+      baseDir = path.resolve(__dirname, '..', '..');
+    } else if (import.meta && import.meta.url) {
+      const filename = fileURLToPath(import.meta.url);
+      const dirname = path.dirname(filename);
+      baseDir = path.resolve(dirname, '..', '..');
     }
-    currentDir = path.dirname(currentDir);
+  } catch (err) {
+    baseDir = process.cwd();
   }
   
-  const fallbackDir = path.join(process.cwd(), 'data');
-  if (!fs.existsSync(fallbackDir)) {
-    fs.mkdirSync(fallbackDir, { recursive: true });
+  const dataDir = path.join(baseDir, 'data');
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch (err) {
+      // Fallback to home directory if workspace is read-only (e.g. root)
+      const homeDataDir = path.join(os.homedir(), '.nextrouter', 'data');
+      if (!fs.existsSync(homeDataDir)) {
+        fs.mkdirSync(homeDataDir, { recursive: true });
+      }
+      return path.join(homeDataDir, 'db.json');
+    }
   }
-  return path.join(fallbackDir, 'db.json');
+  return path.join(dataDir, 'db.json');
 }
 
 export function getDatabase() {

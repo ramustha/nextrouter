@@ -1,62 +1,52 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket, Message } from './types';
+import { calculateRateLimits, findWorkspaceRoot } from './utils';
+import { getDatabase } from '../store/database';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
 import { execSync } from 'child_process';
 import { getEncoding } from 'js-tiktoken';
+import { getGitWorktrees } from '../git/git-helper';
 
-function findWorkspaceRoot(filePath: string): string | null {
-  try {
-    let currentDir = filePath;
-    if (fs.existsSync(currentDir) && !fs.statSync(currentDir).isDirectory()) {
-      currentDir = path.dirname(currentDir);
+function getSqliteExecutable(): string {
+  if (os.platform() === 'win32') {
+    const cwdLocalPath = path.join(process.cwd(), 'bin', 'sqlite3.exe');
+    if (fs.existsSync(cwdLocalPath)) {
+      return `"${cwdLocalPath}"`;
     }
-    const root = path.parse(currentDir).root;
-    while (currentDir && currentDir !== root) {
-      if (
-        fs.existsSync(path.join(currentDir, 'package.json')) ||
-        fs.existsSync(path.join(currentDir, '.git')) ||
-        fs.existsSync(path.join(currentDir, 'CLAUDE.md')) ||
-        fs.existsSync(path.join(currentDir, '.cursorrules')) ||
-        fs.existsSync(path.join(currentDir, '.claude'))
-      ) {
-        return currentDir;
-      }
-      currentDir = path.dirname(currentDir);
-    }
-  } catch (e) {
-    // Ignore filesystem errors and fallback to string parsing
-  }
-
-  // Fallback: heuristic path parsing
-  const homedir = os.homedir();
-  if (filePath.startsWith(homedir)) {
-    const relative = path.relative(homedir, filePath);
-    const segments = relative.split(path.sep);
-    if (segments[0] === 'Work') {
-      if (segments.length >= 3) {
-        if (['growth', 'payment', 'personal'].includes(segments[1])) {
-          if (segments[1] === 'growth' && ['traffic', 'seo', 'affiliate'].includes(segments[2])) {
-            return path.join(homedir, 'Work', segments[1], segments[2], segments[3] || '');
-          }
-          return path.join(homedir, 'Work', segments[1], segments[2] || '');
-        }
-        return path.join(homedir, 'Work', segments[1] || '');
-      }
-    }
-    if (segments.length >= 2) {
-      return path.join(homedir, segments[0], segments[1]);
-    } else if (segments.length === 1) {
-      return path.join(homedir, segments[0]);
+    const relativePath = path.join(__dirname, '..', '..', 'bin', 'sqlite3.exe');
+    if (fs.existsSync(relativePath)) {
+      return `"${relativePath}"`;
     }
   }
-  return null;
+  return 'sqlite3';
 }
 
 export class CursorAdapter implements ProviderAdapter {
   id = 'cursor';
   name = 'Cursor';
+
+  private runSqliteQuery(dbPath: string, query: string, maxBuffer?: number): string {
+    const sqlite = getSqliteExecutable();
+    try {
+      const cmd = `${sqlite} "${dbPath}" "${query}"`;
+      return execSync(cmd, { 
+        encoding: 'utf8', 
+        maxBuffer: maxBuffer,
+        stdio: ['pipe', 'pipe', 'ignore'] 
+      });
+    } catch (e: any) {
+      if (os.platform() === 'win32') {
+        const localPath = path.join(process.cwd(), 'bin', 'sqlite3.exe');
+        const relativePath = path.join(__dirname, '..', '..', 'bin', 'sqlite3.exe');
+        if (!fs.existsSync(localPath) && !fs.existsSync(relativePath)) {
+          console.warn('WARNING: SQLite3 is not installed or available. Please run "npm run setup:windows" to set up SQLite3 on Windows.');
+        }
+      }
+      throw e;
+    }
+  }
 
   private getUserDataDir(): string {
     const platform = os.platform();
@@ -145,14 +135,21 @@ export class CursorAdapter implements ProviderAdapter {
   }
 
   private getWorkspacePathsMap(): Record<string, string> {
-    const map: Record<string, string> = {};
     const globalDbPath = path.join(this.getUserDataDir(), 'globalStorage', 'state.vscdb');
-    if (!fs.existsSync(globalDbPath)) return map;
+    if (!fs.existsSync(globalDbPath)) return {};
 
     try {
+      const stats = fs.statSync(globalDbPath);
+      const mtime = stats.mtimeMs;
+      
+      const cached = (globalThis as any)._cursorWorkspacePathsMapCached;
+      if (cached && cached.mtime === mtime) {
+        return { ...cached.map };
+      }
+
+      const map: Record<string, string> = {};
       const query = `SELECT value FROM itemTable WHERE key = 'history.recentlyOpenedPathsList';`;
-      const cmd = `sqlite3 "${globalDbPath}" "${query}"`;
-      const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      const output = this.runSqliteQuery(globalDbPath, query).trim();
       if (output) {
         const parsed = JSON.parse(output);
         if (parsed && Array.isArray(parsed.entries)) {
@@ -166,10 +163,12 @@ export class CursorAdapter implements ProviderAdapter {
           }
         }
       }
+      (globalThis as any)._cursorWorkspacePathsMapCached = { mtime, map };
+      return { ...map };
     } catch (e) {
       console.error('Error resolving workspace paths map:', e);
+      return {};
     }
-    return map;
   }
 
   private getChatsDir(): string {
@@ -181,11 +180,55 @@ export class CursorAdapter implements ProviderAdapter {
     if (!fs.existsSync(chatsDir)) return [];
 
     const sessions: Session[] = [];
+    
+    // Retrieve persistent sessions cache from globalThis
+    const globalCursorCache = (globalThis as any)._cursorSessionsCache || new Map<string, Session>();
+    (globalThis as any)._cursorSessionsCache = globalCursorCache;
+
+    // Pre-populate memory cache from local DB on cold start
+    if (globalCursorCache.size === 0) {
+      try {
+        const db = getDatabase();
+        const dbSessions = db.sessions.all().filter(s => s.provider_id === 'cursor');
+        for (const s of dbSessions) {
+          const cacheKey = `${s.id}-${s.last_active_at}`;
+          globalCursorCache.set(cacheKey, {
+            id: s.id,
+            title: s.title,
+            startedAt: s.started_at,
+            lastActiveAt: s.last_active_at,
+            status: s.status as any,
+            tokenCount: s.token_count,
+            messages: s.messages,
+            workspacePath: s.workspace_path
+          });
+        }
+      } catch (e) {
+        // Ignore DB read errors
+      }
+    }
+
     const pathsMap = this.getWorkspacePathsMap();
     
-    // Pre-populate with current workspace path to be sure it resolves
-    const currentWorkspaceMd5 = crypto.createHash('md5').update(path.resolve(workspacePath)).digest('hex');
-    pathsMap[currentWorkspaceMd5] = path.resolve(workspacePath);
+    // Retrieve global workspace paths cache to avoid re-scanning
+    const globalWorkspacePathsCache = (globalThis as any)._cursorWorkspacePathsCache || new Map<string, string>();
+    (globalThis as any)._cursorWorkspacePathsCache = globalWorkspacePathsCache;
+
+    // Merge cached paths
+    for (const [hash, resolvedPath] of globalWorkspacePathsCache.entries()) {
+      if (!pathsMap[hash]) {
+        pathsMap[hash] = resolvedPath;
+      }
+    }
+
+    // Pre-populate with current workspace and all its git worktrees to be sure they resolve
+    const worktrees = getGitWorktrees(workspacePath);
+    for (const wt of worktrees) {
+      const resolvedWt = path.resolve(wt);
+      const wtMd5 = crypto.createHash('md5').update(resolvedWt).digest('hex');
+      pathsMap[wtMd5] = resolvedWt;
+      globalWorkspacePathsCache.set(wtMd5, resolvedWt);
+    }
 
     let enc: any;
     try {
@@ -210,7 +253,7 @@ export class CursorAdapter implements ProviderAdapter {
             if (fs.existsSync(dbPath)) {
               try {
                 const metaQuery = `SELECT value FROM meta;`;
-                const metaHex = execSync(`sqlite3 "${dbPath}" "${metaQuery}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+                const metaHex = this.runSqliteQuery(dbPath, metaQuery).trim();
                 if (metaHex) {
                   const meta = JSON.parse(Buffer.from(metaHex, 'hex').toString('utf8'));
                   if (meta.currentPlanUri && typeof meta.currentPlanUri === 'string') {
@@ -219,13 +262,14 @@ export class CursorAdapter implements ProviderAdapter {
                     if (root) {
                       resolvedWorkspacePath = root;
                       pathsMap[workspaceHash] = root;
+                      globalWorkspacePathsCache.set(workspaceHash, root);
                       break;
                     }
                   }
                 }
                 
                 const blobsQuery = `SELECT hex(data) FROM blobs ORDER BY rowid;`;
-                const blobsHex = execSync(`sqlite3 "${dbPath}" "${blobsQuery}"`, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+                const blobsHex = this.runSqliteQuery(dbPath, blobsQuery, 10 * 1024 * 1024);
                 const lines = blobsHex.split('\n').filter(l => l.trim() !== '');
                 for (const line of lines) {
                   const text = Buffer.from(line, 'hex').toString('utf8');
@@ -238,6 +282,7 @@ export class CursorAdapter implements ProviderAdapter {
                         if (root) {
                           resolvedWorkspacePath = root;
                           pathsMap[workspaceHash] = root;
+                          globalWorkspacePathsCache.set(workspaceHash, root);
                           break;
                         }
                       }
@@ -264,10 +309,23 @@ export class CursorAdapter implements ProviderAdapter {
           if (!fs.existsSync(dbPath)) continue;
 
           try {
+            const stats = fs.statSync(dbPath);
+            const lastActiveAt = stats.mtime.toISOString();
+            
+            // Query persistent cache on globalThis
+            const globalCursorCache = (globalThis as any)._cursorSessionsCache || new Map<string, Session>();
+            (globalThis as any)._cursorSessionsCache = globalCursorCache;
+
+            const cacheKey = `${uuid}-${lastActiveAt}`;
+            const cachedSession = globalCursorCache.get(cacheKey);
+            if (cachedSession) {
+              sessions.push(cachedSession);
+              continue;
+            }
+
             // Read meta table
             const metaQuery = `SELECT value FROM meta;`;
-            const metaCmd = `sqlite3 "${dbPath}" "${metaQuery}"`;
-            const metaHex = execSync(metaCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+            const metaHex = this.runSqliteQuery(dbPath, metaQuery).trim();
             if (!metaHex) continue;
 
             const metaJson = Buffer.from(metaHex, 'hex').toString('utf8');
@@ -275,15 +333,11 @@ export class CursorAdapter implements ProviderAdapter {
 
             // Read blobs table ordered by rowid
             const blobsQuery = `SELECT hex(data) FROM blobs ORDER BY rowid;`;
-            const blobsCmd = `sqlite3 "${dbPath}" "${blobsQuery}"`;
-            const blobsHex = execSync(blobsCmd, { encoding: 'utf8', maxBuffer: 15 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+            const blobsHex = this.runSqliteQuery(dbPath, blobsQuery, 15 * 1024 * 1024);
             
             const lines = blobsHex.split('\n').filter(l => l.trim() !== '');
             const messages: Message[] = [];
             let tokenCount = 0;
-
-            const stats = fs.statSync(dbPath);
-            const lastActiveAt = stats.mtime.toISOString();
             const startedAt = meta.createdAt ? new Date(meta.createdAt).toISOString() : lastActiveAt;
 
             for (const line of lines) {
@@ -319,8 +373,19 @@ export class CursorAdapter implements ProviderAdapter {
             }
 
             if (messages.length > 0) {
+              // Interpolate message timestamps linearly between startedAt and lastActiveAt
+              const startMs = new Date(startedAt).getTime();
+              const endMs = new Date(lastActiveAt).getTime();
+              const msgCount = messages.length;
+              for (let i = 0; i < msgCount; i++) {
+                const estTime = msgCount > 1
+                  ? startMs + (endMs - startMs) * (i / (msgCount - 1))
+                  : endMs;
+                messages[i].timestamp = new Date(estTime).toISOString();
+              }
+
               const title = `[${workspaceName}] ${meta.name || 'Cursor Session'}`;
-              sessions.push({
+              const sessionObj: Session = {
                 id: uuid,
                 title,
                 startedAt,
@@ -329,7 +394,13 @@ export class CursorAdapter implements ProviderAdapter {
                 tokenCount,
                 messages,
                 workspacePath: resolvedWorkspacePath || undefined
-              });
+              };
+              const globalCursorCache = (globalThis as any)._cursorSessionsCache;
+              if (globalCursorCache) {
+                const cacheKey = `${uuid}-${lastActiveAt}`;
+                globalCursorCache.set(cacheKey, sessionObj);
+              }
+              sessions.push(sessionObj);
             }
           } catch (e) {
             // Ignore individual session errors
@@ -345,17 +416,24 @@ export class CursorAdapter implements ProviderAdapter {
 
   async getContextSize(workspacePath: string): Promise<ContextMetrics> {
     const sessions = await this.getSessions(workspacePath);
-    const totalTokens = sessions.length > 0 ? sessions[0].tokenCount : 0;
+    const worktrees = getGitWorktrees(workspacePath).map(p => path.resolve(p));
+    const workspaceSessions = sessions.filter(s => 
+      s.workspacePath && worktrees.includes(path.resolve(s.workspacePath))
+    );
+    const totalTokens = workspaceSessions.length > 0 ? workspaceSessions[0].tokenCount : 0;
     
     // Cursor models default context limit (like GPT-4o)
     const limit = 128000;
     const percent = Math.min(100, Math.round((totalTokens / limit) * 100));
 
+    const rateLimits = calculateRateLimits(sessions, 30, 125);
+
     return {
       totalTokens,
       totalFiles: 0,
       budgetUsedPercent: percent,
-      contextWindowLimit: limit
+      contextWindowLimit: limit,
+      ...rateLimits
     };
   }
 

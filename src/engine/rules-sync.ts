@@ -4,11 +4,13 @@ import { getDatabase, RuleRow } from '../store/database';
 import { loadWorkspaceSkills } from '../skills/loader';
 import fs from 'fs';
 import path from 'path';
+import { findPlanFiles } from '../adapters/utils';
 
 export async function pullRules(workspacePath: string): Promise<RuleFile[]> {
   const db = getDatabase();
   const activeProviders = await detectActiveProviders(workspacePath);
   const pulledRules: RuleFile[] = [];
+  const rulesToUpsert: any[] = [];
 
   for (const provider of activeProviders) {
     try {
@@ -20,8 +22,8 @@ export async function pullRules(workspacePath: string): Promise<RuleFile[]> {
           .replace(/<!-- NEXTROUTER_PLAN_START -->[\s\S]*<!-- NEXTROUTER_PLAN_END -->/, '')
           .trim();
 
-        // Upsert into local database
-        db.rules.upsert({
+        // Accumulate for batch database insert
+        rulesToUpsert.push({
           id: rule.id,
           provider_id: provider.id,
           filename: rule.filename,
@@ -38,6 +40,10 @@ export async function pullRules(workspacePath: string): Promise<RuleFile[]> {
     } catch (e) {
       console.error(`Failed to pull rules from provider ${provider.id}:`, e);
     }
+  }
+
+  if (rulesToUpsert.length > 0) {
+    db.rules.upsertMany(rulesToUpsert);
   }
 
   return pulledRules;
@@ -113,23 +119,21 @@ export function mergeRules(rules: RuleRow[]): string {
  * Reads any active plan file in the workspace
  */
 function loadPlanBlock(workspacePath: string): string {
-  const possibleNames = ['plan.md', 'PLAN.md', 'implementation_plan.md', 'IMPLEMENTATION_PLAN.md'];
-  for (const name of possibleNames) {
-    const filePath = path.join(workspacePath, name);
-    if (fs.existsSync(filePath)) {
-      try {
-        const planContent = fs.readFileSync(filePath, 'utf8').trim();
-        if (planContent) {
-          return [
-            '\n\n<!-- NEXTROUTER_PLAN_START -->',
-            '## 🎯 Workspace Active Plan',
-            planContent,
-            '<!-- NEXTROUTER_PLAN_END -->'
-          ].join('\n');
-        }
-      } catch (err) {
-        console.error(`Failed to read plan file ${name}:`, err);
+  const plans = findPlanFiles(workspacePath);
+  if (plans.length > 0) {
+    const activePlan = plans[0];
+    try {
+      const planContent = fs.readFileSync(activePlan.path, 'utf8').trim();
+      if (planContent) {
+        return [
+          '\n\n<!-- NEXTROUTER_PLAN_START -->',
+          `## 🎯 Workspace Active Plan (${activePlan.name})`,
+          planContent,
+          '<!-- NEXTROUTER_PLAN_END -->'
+        ].join('\n');
       }
+    } catch (err) {
+      console.error(`Failed to read plan file ${activePlan.path}:`, err);
     }
   }
   return '';

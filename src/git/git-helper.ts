@@ -16,13 +16,11 @@ export interface GitStatusResult {
 
 export function isGitRepository(workspacePath: string): boolean {
   try {
-    const gitDir = path.join(workspacePath, '.git');
-    if (!fs.existsSync(gitDir)) return false;
-    
     const output = execSync('git rev-parse --is-inside-work-tree', {
       cwd: workspacePath,
       stdio: ['ignore', 'pipe', 'ignore'],
       encoding: 'utf8',
+      timeout: 1000
     });
     return output.trim() === 'true';
   } catch (e) {
@@ -36,6 +34,7 @@ export function getGitBranch(workspacePath: string): string {
       cwd: workspacePath,
       stdio: ['ignore', 'pipe', 'ignore'],
       encoding: 'utf8',
+      timeout: 1000
     });
     return output.trim();
   } catch (e) {
@@ -43,13 +42,23 @@ export function getGitBranch(workspacePath: string): string {
   }
 }
 
+let cachedGitStatus: { [path: string]: { status: GitStatusResult; timestamp: number } } = {};
+
 export function getGitStatus(workspacePath: string): GitStatusResult {
+  const now = Date.now();
+  const cached = cachedGitStatus[workspacePath];
+  if (cached && (now - cached.timestamp < 10000)) {
+    return cached.status;
+  }
+
   if (!isGitRepository(workspacePath)) {
-    return {
+    const res = {
       isRepository: false,
       branch: '',
       files: [],
     };
+    cachedGitStatus[workspacePath] = { status: res, timestamp: now };
+    return res;
   }
 
   try {
@@ -88,17 +97,21 @@ export function getGitStatus(workspacePath: string): GitStatusResult {
       };
     });
 
-    return {
+    const res = {
       isRepository: true,
       branch,
       files,
     };
+    cachedGitStatus[workspacePath] = { status: res, timestamp: now };
+    return res;
   } catch (e) {
-    return {
+    const res = {
       isRepository: true,
       branch: 'unknown',
       files: [],
     };
+    cachedGitStatus[workspacePath] = { status: res, timestamp: now };
+    return res;
   }
 }
 
@@ -133,5 +146,37 @@ export function getFileDiff(workspacePath: string, filepath: string): string {
   } catch (e: any) {
     console.error(`Error running git diff for ${filepath}:`, e);
     return `Error generating diff: ${e.message || e}`;
+  }
+}
+
+export function getGitWorktrees(workspacePath: string): string[] {
+  const resolvedWorkspace = path.resolve(workspacePath);
+  if (!isGitRepository(resolvedWorkspace)) {
+    return [resolvedWorkspace];
+  }
+  try {
+    const output = execSync('git worktree list --porcelain', {
+      cwd: resolvedWorkspace,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000
+    });
+    const paths: string[] = [];
+    const lines = output.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) {
+        const wtPath = line.substring(9).trim();
+        if (wtPath) {
+          paths.push(path.resolve(wtPath));
+        }
+      }
+    }
+    // Fallback if no worktrees parsed
+    if (paths.length === 0) {
+      paths.push(resolvedWorkspace);
+    }
+    return Array.from(new Set(paths)); // Deduplicate
+  } catch (e) {
+    return [resolvedWorkspace];
   }
 }

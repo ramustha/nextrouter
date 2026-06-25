@@ -1,4 +1,5 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket } from './types';
+import { calculateRateLimits } from './utils';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -45,11 +46,13 @@ export class CopilotAdapter implements ProviderAdapter {
   }
 
   async getContextSize(workspacePath: string): Promise<ContextMetrics> {
+    const rateLimits = calculateRateLimits([], 100, 500);
     return {
       totalTokens: 0,
       totalFiles: 0,
       budgetUsedPercent: 0,
-      contextWindowLimit: 0
+      contextWindowLimit: 0,
+      ...rateLimits
     };
   }
 

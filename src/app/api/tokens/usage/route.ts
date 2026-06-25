@@ -1,17 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/store/database';
 
-interface PriceTable {
-  input: number;  // price per million tokens
-  output: number; // price per million tokens
-}
+import { PROVIDER_PRICING } from '@/adapters/utils';
 
-const PROVIDER_PRICING: Record<string, PriceTable> = {
-  'claude-code': { input: 3.00, output: 15.00 }, // Claude 3.5 Sonnet
-  'cursor': { input: 2.50, output: 10.00 },      // GPT-4o
-  'antigravity': { input: 1.25, output: 5.00 },   // Gemini 1.5 Pro
-  'copilot': { input: 2.50, output: 10.00 }       // default completions pricing
-};
 
 export async function GET() {
   const db = getDatabase();
@@ -28,6 +19,18 @@ export async function GET() {
   let totalTokens = 0;
   let totalCost = 0;
 
+  // Generate 7-day timeline structure (including today)
+  const timeline: Array<{ dateStr: string; label: string; tokens: number; cost: number }> = [];
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+    const label = `${daysOfWeek[d.getDay()]} ${d.getDate()}`; // e.g. "Mon 14"
+    timeline.push({ dateStr, label, tokens: 0, cost: 0 });
+  }
+
   // Process logged token transactions
   for (const tx of tokenTransactions) {
     const pricing = PROVIDER_PRICING[tx.provider_id] || { input: 2.50, output: 10.00 };
@@ -41,6 +44,13 @@ export async function GET() {
     
     totalTokens += tx.tokens;
     totalCost += cost;
+
+    const txDate = tx.timestamp ? tx.timestamp.split('T')[0] : '';
+    const timelineDay = timeline.find(day => day.dateStr === txDate);
+    if (timelineDay) {
+      timelineDay.tokens += tx.tokens;
+      timelineDay.cost += cost;
+    }
   }
 
   // Fallback: if no transactions are logged but sessions exist, calculate from active sessions
@@ -63,6 +73,13 @@ export async function GET() {
 
       totalTokens += session.token_count;
       totalCost += cost;
+
+      const sessionDate = session.last_active_at ? session.last_active_at.split('T')[0] : '';
+      const timelineDay = timeline.find(day => day.dateStr === sessionDate);
+      if (timelineDay) {
+        timelineDay.tokens += session.token_count;
+        timelineDay.cost += cost;
+      }
     }
   }
 
@@ -73,9 +90,17 @@ export async function GET() {
     cost: Math.round(val.cost * 100) / 100 // round to cents
   }));
 
+  const formattedTimeline = timeline.map(t => ({
+    date: t.dateStr,
+    label: t.label,
+    tokens: t.tokens,
+    cost: Math.round(t.cost * 100) / 100
+  }));
+
   return NextResponse.json({
     totalTokens,
     totalCost: Math.round(totalCost * 100) / 100,
-    breakdown
+    breakdown,
+    timeline: formattedTimeline
   });
 }

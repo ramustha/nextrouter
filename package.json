@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "npm run cli daemon start && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "mcp": "tsx src/cli/mcp.ts",
-    "cli": "tsx src/cli/index.ts"
+    "cli": "tsx src/cli/index.ts",
+    "setup": "tsx src/cli/index.ts setup",
+    "setup:windows": "powershell -ExecutionPolicy Bypass -File ./setup-windows.ps1"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

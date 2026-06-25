@@ -1,57 +1,11 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket, Message } from './types';
+import { calculateRateLimits, findWorkspaceRoot } from './utils';
+import { getDatabase } from '../store/database';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
 import { getEncoding } from 'js-tiktoken';
-
-function findWorkspaceRoot(filePath: string): string | null {
-  try {
-    let currentDir = filePath;
-    if (fs.existsSync(currentDir) && !fs.statSync(currentDir).isDirectory()) {
-      currentDir = path.dirname(currentDir);
-    }
-    const root = path.parse(currentDir).root;
-    while (currentDir && currentDir !== root) {
-      if (
-        fs.existsSync(path.join(currentDir, 'package.json')) ||
-        fs.existsSync(path.join(currentDir, '.git')) ||
-        fs.existsSync(path.join(currentDir, 'CLAUDE.md')) ||
-        fs.existsSync(path.join(currentDir, '.cursorrules')) ||
-        fs.existsSync(path.join(currentDir, '.claude'))
-      ) {
-        return currentDir;
-      }
-      currentDir = path.dirname(currentDir);
-    }
-  } catch (e) {
-    // Ignore filesystem errors and fallback to string parsing
-  }
-
-  // Fallback: heuristic path parsing
-  const homedir = os.homedir();
-  if (filePath.startsWith(homedir)) {
-    const relative = path.relative(homedir, filePath);
-    const segments = relative.split(path.sep);
-    if (segments[0] === 'Work') {
-      if (segments.length >= 3) {
-        if (['growth', 'payment', 'personal'].includes(segments[1])) {
-          if (segments[1] === 'growth' && ['traffic', 'seo', 'affiliate'].includes(segments[2])) {
-            return path.join(homedir, 'Work', segments[1], segments[2], segments[3] || '');
-          }
-          return path.join(homedir, 'Work', segments[1], segments[2] || '');
-        }
-        return path.join(homedir, 'Work', segments[1] || '');
-      }
-    }
-    if (segments.length >= 2) {
-      return path.join(homedir, segments[0], segments[1]);
-    } else if (segments.length === 1) {
-      return path.join(homedir, segments[0]);
-    }
-  }
-  return null;
-}
 
 export class AntigravityAdapter implements ProviderAdapter {
   id = 'antigravity';
@@ -105,6 +59,34 @@ export class AntigravityAdapter implements ProviderAdapter {
     if (!fs.existsSync(brainDir)) return [];
 
     const sessions: Session[] = [];
+    
+    // Retrieve persistent sessions cache from globalThis
+    const globalAntigravityCache = (globalThis as any)._antigravitySessionsCache || new Map<string, Session>();
+    (globalThis as any)._antigravitySessionsCache = globalAntigravityCache;
+
+    // Pre-populate memory cache from local DB on cold start
+    if (globalAntigravityCache.size === 0) {
+      try {
+        const db = getDatabase();
+        const dbSessions = db.sessions.all().filter(s => s.provider_id === 'antigravity');
+        for (const s of dbSessions) {
+          const mtimeMs = new Date(s.last_active_at).getTime();
+          const cacheKey = `${s.id}-${mtimeMs}`;
+          globalAntigravityCache.set(cacheKey, {
+            id: s.id,
+            title: s.title,
+            startedAt: s.started_at,
+            lastActiveAt: s.last_active_at,
+            status: s.status as any,
+            tokenCount: s.token_count,
+            messages: s.messages,
+            workspacePath: s.workspace_path
+          });
+        }
+      } catch (e) {
+        // Ignore DB read errors
+      }
+    }
     try {
       const folders = fs.readdirSync(brainDir);
       let enc;
@@ -123,12 +105,26 @@ export class AntigravityAdapter implements ProviderAdapter {
         if (!fs.existsSync(logPath)) continue;
 
         try {
+          const stats = fs.statSync(logPath);
+          const mtimeMs = stats.mtime.getTime();
+
+          // Query persistent cache on globalThis
+          const globalAntigravityCache = (globalThis as any)._antigravitySessionsCache || new Map<string, Session>();
+          (globalThis as any)._antigravitySessionsCache = globalAntigravityCache;
+
+          const cacheKey = `${folder}-${mtimeMs}`;
+          const cachedSession = globalAntigravityCache.get(cacheKey);
+          if (cachedSession) {
+            sessions.push(cachedSession);
+            continue;
+          }
+
           const content = fs.readFileSync(logPath, 'utf8');
           const lines = content.split('\n').filter(l => l.trim() !== '');
           const messages: Message[] = [];
           let startedAt = new Date().toISOString();
           let lastActiveAt = startedAt;
-          let title = 'New Antigravity Session';
+          let title = 'Antigravity Session';
           let tokenCount = 0;
           let sessionWorkspacePath = '';
 
@@ -141,6 +137,19 @@ export class AntigravityAdapter implements ProviderAdapter {
               const uri = step.workspaceUris[0];
               if (uri.startsWith('file://')) {
                 sessionWorkspacePath = decodeURIComponent(uri.replace(/^file:\/\//, ''));
+              }
+            } else if (step.content && typeof step.content === 'string') {
+              const wsMatch = step.content.match(/"workspaceUris"\s*:\s*\[\s*"file:\/\/([^"]+)"/);
+              if (wsMatch) {
+                sessionWorkspacePath = decodeURIComponent(wsMatch[1]);
+              } else {
+                const homedir = os.homedir();
+                const escapedHomedir = homedir.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp('file://(' + escapedHomedir + '[^\\s\\n)"\'`]+)');
+                const fileMatch = step.content.match(regex);
+                if (fileMatch) {
+                  sessionWorkspacePath = decodeURIComponent(fileMatch[1]);
+                }
               }
             } else if (step.tool_calls && Array.isArray(step.tool_calls)) {
               for (const call of step.tool_calls) {
@@ -226,7 +235,7 @@ export class AntigravityAdapter implements ProviderAdapter {
           }
 
           if (messages.length > 0) {
-            sessions.push({
+            const sessionObj: Session = {
               id: folder,
               title,
               startedAt,
@@ -235,7 +244,13 @@ export class AntigravityAdapter implements ProviderAdapter {
               tokenCount,
               messages,
               workspacePath: sessionWorkspacePath || undefined
-            });
+            };
+            const globalAntigravityCache = (globalThis as any)._antigravitySessionsCache;
+            if (globalAntigravityCache) {
+              const cacheKey = `${folder}-${stats.mtime.getTime()}`;
+              globalAntigravityCache.set(cacheKey, sessionObj);
+            }
+            sessions.push(sessionObj);
           }
         } catch (err) {
           console.error(`Error parsing session logs at ${logPath}:`, err);
@@ -253,18 +268,25 @@ export class AntigravityAdapter implements ProviderAdapter {
 
   async getContextSize(workspacePath: string): Promise<ContextMetrics> {
     const sessions = await this.getSessions(workspacePath);
-    const totalTokens = sessions.length > 0 ? sessions[0].tokenCount : 0;
+    const resolvedPath = path.resolve(workspacePath);
+    const workspaceSessions = sessions.filter(s => 
+      s.workspacePath && path.resolve(s.workspacePath) === resolvedPath
+    );
+    const totalTokens = workspaceSessions.length > 0 ? workspaceSessions[0].tokenCount : 0;
     
     // Antigravity models typically have large context windows (e.g. 2M tokens for Gemini 1.5 Pro)
     // We'll set a standard default window size limit of 1,000,000 tokens for visual safety
     const limit = 1000000;
     const percent = Math.min(100, Math.round((totalTokens / limit) * 100));
 
+    const rateLimits = calculateRateLimits(sessions, 100, 1500);
+
     return {
       totalTokens,
       totalFiles: 0,
       budgetUsedPercent: percent,
-      contextWindowLimit: limit
+      contextWindowLimit: limit,
+      ...rateLimits
     };
   }
 

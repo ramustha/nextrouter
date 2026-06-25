@@ -3,13 +3,13 @@
 import React, { useState, useEffect } from 'react';
 
 export default function OnboardingWalkthroughPage() {
+  const [activeGuideTab, setActiveGuideTab] = useState<string>('bridge');
   const [activeStep, setActiveStep] = useState('mcp');
   const [copiedMcp, setCopiedMcp] = useState(false);
   const [copiedClaude, setCopiedClaude] = useState(false);
   const [copiedAntigravity, setCopiedAntigravity] = useState(false);
   const [activeProviderTab, setActiveProviderTab] = useState('claude');
   const [settingUp, setSettingUp] = useState(false);
-  const [selectedCliCommand, setSelectedCliCommand] = useState('status');
   const [pluginStatuses, setPluginStatuses] = useState<Array<{
     providerId: string;
     providerName: string;
@@ -20,6 +20,31 @@ export default function OnboardingWalkthroughPage() {
   }>>([]);
   const [installingPlugin, setInstallingPlugin] = useState<string>('');
   const [pluginLogs, setPluginLogs] = useState<Record<string, string[]>>({});
+  const [workspacePath, setWorkspacePath] = useState('');
+
+  useEffect(() => {
+    async function loadSystemStatus() {
+      try {
+        const res = await fetch('/api/system');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.workspacePath) {
+            setWorkspacePath(data.workspacePath);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load system path:', e);
+      }
+    }
+    loadSystemStatus();
+  }, []);
+
+  const resolvedPath = workspacePath || '[absolute-project-path]';
+  const mcpPath = workspacePath ? `${workspacePath}/src/cli/mcp.ts` : '[absolute-project-path]/src/cli/mcp.ts';
+
+  const mcpCommand = `npx tsx ${mcpPath}`;
+  const claudeCommand = `claude mcp add nextrouter npx tsx ${mcpPath}`;
+  const antigravityCommand = `node -e "const fs=require('fs'), path=require('path'), os=require('os'), p=path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json'); fs.mkdirSync(path.dirname(p), {recursive:true}); const d=fs.existsSync(p)?JSON.parse(fs.readFileSync(p, 'utf8')):{}; d.mcpServers=d.mcpServers||{}; d.mcpServers.nextrouter={command:'npx', args:['tsx', '${workspacePath ? workspacePath.replace(/\\/g, '\\\\') : '[absolute-project-path]'}/src/cli/mcp.ts']}; fs.writeFileSync(p, JSON.stringify(d, null, 2));"`;
 
   async function loadPluginStatuses() {
     try {
@@ -51,76 +76,6 @@ export default function OnboardingWalkthroughPage() {
     }
   }
 
-  const steps = [
-    { id: 'mcp', name: '1. MCP Setup', icon: '🔌' },
-    { id: 'handoff', name: '2. Auto-Handoff', icon: '🔄' },
-    { id: 'bridge', name: '3. Context Bridge', icon: '⚡' },
-    { id: 'rules', name: '4. Rules Sync', icon: '⚙️' },
-    { id: 'skills', name: '5. Universal Skills', icon: '🧩' },
-    { id: 'providers', name: '6. Provider Guides', icon: '🤖' },
-    { id: 'integrations', name: '7. Commands & Plugins', icon: '🔌' }
-  ];
-
-  const mcpCommand = `npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/mcp.ts`;
-  const claudeCommand = `claude mcp add nextrouter npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/mcp.ts`;
-  const antigravityCommand = `python3 -c "import json, os; p=os.path.expanduser('~/.gemini/antigravity/mcp_config.json'); d=json.load(open(p)) if os.path.exists(p) else {'mcpServers':{}}; d.setdefault('mcpServers',{})['nextrouter']={'command':'npx','args':['tsx','/Users/ramadhani.musthofa/Work/nextrouter/src/cli/mcp.ts']}; json.dump(d,open(p,'w'),indent=2)"`;
-
-  const mockCliOutputs: Record<string, { cmd: string; output: React.ReactNode }> = {
-    status: {
-      cmd: 'nextrouter status',
-      output: (
-        <div>
-          <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>=== NextRouter CLI Status ===</span><br />
-          <span>Workspace Path: /Users/ramadhani.musthofa/Work/nextrouter</span><br /><br />
-          <span style={{ color: '#22d3ee', fontWeight: 'bold' }}>Active Providers Detected (3):</span><br />
-          <span style={{ color: '#10b981' }}> ✓ Claude Code (claude-code)</span><br />
-          <span style={{ color: '#10b981' }}> ✓ Cursor (cursor)</span><br />
-          <span style={{ color: '#10b981' }}> ✓ Antigravity (antigravity)</span><br /><br />
-          <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>Active Sessions in DB (3):</span><br />
-          <span> - [claude-code] &quot;Implement DB Connection helper&quot; (1,500 tokens)</span><br />
-          <span> - [cursor] &quot;Fix sidebar routing flex alignment&quot; (4,200 tokens)</span><br />
-          <span> - [antigravity] &quot;Add Antigravity MCP Setup integration&quot; (850 tokens)</span>
-        </div>
-      )
-    },
-    sync: {
-      cmd: 'nextrouter sync',
-      output: (
-        <div>
-          <span>Initiating bidirectional rule sync...</span><br />
-          <span style={{ color: '#38bdf8' }}>  ➔ Pulling rules from .cursorrules, CLAUDE.md, GEMINI.md</span><br />
-          <span style={{ color: '#38bdf8' }}>  ➔ Merging rules with 2 active custom skills</span><br />
-          <span style={{ color: '#38bdf8' }}>  ➔ Propagating unified rules to all provider config files</span><br />
-          <span style={{ color: '#4ade80', fontWeight: 'bold' }}>✓ Rules synced successfully across all active providers!</span>
-        </div>
-      )
-    },
-    tokens: {
-      cmd: 'nextrouter tokens',
-      output: (
-        <div>
-          <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>=== Shared Token Pool &amp; Model Budgets ===</span><br />
-          <span>Total Active Tokens: 6,550</span><br /><br />
-          <span style={{ color: '#e2e8f0', fontWeight: 'bold' }}>Usage vs Model Context Windows:</span><br />
-          <span> - [<span style={{ color: '#4ade80' }}>🟢 SAFE</span>] Gemini 1.5 Pro (Antigravity): 0.3% used (6,550 / 2,000,000)</span><br />
-          <span> - [<span style={{ color: '#4ade80' }}>🟢 SAFE</span>] Claude 3.5 Sonnet (Claude Code): 3.2% used (6,550 / 200,000)</span><br />
-          <span> - [<span style={{ color: '#4ade80' }}>🟢 SAFE</span>] GPT-4o (Cursor): 5.1% used (6,550 / 128,000)</span>
-        </div>
-      )
-    },
-    daemon: {
-      cmd: 'nextrouter daemon status',
-      output: (
-        <div>
-          <span>Daemon status: <span style={{ color: '#4ade80', fontWeight: 'bold' }}>RUNNING</span> (PID: 92450)</span><br />
-          <span>Monitored processes currently active: Cursor, Claude Code, VS Code / Copilot</span><br />
-          <span>Polling Interval: 5 seconds</span><br />
-          <span>Last Sync Event: 2026-06-12 06:25:12 (<span style={{ color: '#fbbf24' }}>Auto-sync triggered by .cursorrules update</span>)</span>
-        </div>
-      )
-    }
-  };
-
   function handleCopy(text: string, setCopied: (v: boolean) => void) {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -128,7 +83,7 @@ export default function OnboardingWalkthroughPage() {
   }
 
   useEffect(() => {
-    if (activeStep === 'integrations') {
+    if (activeStep === 'mcp') {
       loadPluginStatuses();
     }
   }, [activeStep]);
@@ -140,6 +95,7 @@ export default function OnboardingWalkthroughPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         alert(`Setup completed successfully!\n\n${data.logs.join('\n')}`);
+        await loadPluginStatuses();
       } else {
         alert(`Setup failed: ${data.error || 'Unknown error'}\n\n${(data.logs || []).join('\n')}`);
       }
@@ -150,22 +106,449 @@ export default function OnboardingWalkthroughPage() {
     }
   }
 
+  const steps = [
+    { id: 'mcp', name: '1. Connect Assistants', icon: '🔌' },
+    { id: 'handoff', name: '2. Context Bridge & Handoffs', icon: '🔄' },
+    { id: 'rules', name: '3. Rules & Skills Sync', icon: '⚙️' }
+  ];
+
   return (
-    <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+    <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       <div>
-        <h1 style={{ fontSize: '2.2rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Onboarding Guide & Tutorials</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginTop: '4px' }}>
-          Learn how to get the most out of NextRouter context sharing, monitoring, and rules syncing features
+        <h1 style={{ fontSize: '2rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Onboarding Guide & Tutorials</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>
+          Learn how to get the most out of NextRouter context sharing, rules syncing, and prompt skills management
         </p>
       </div>
+
+      {/* Revamped Interactive Feature Guide */}
+      <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '1.4rem' }}>📚</span>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, fontFamily: 'var(--font-display)', background: 'linear-gradient(to right, #a78bfa, #22d3ee)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>How NextRouter Works — Interactive Guide</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '2px 0 0 0' }}>Click through the tabs below to explore the core architecture and features under the hood</p>
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginTop: '4px' }}>
+          {/* Left Side: Tabs List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '210px', flexShrink: 0 }}>
+            {[
+              { id: 'bridge', name: 'Context Bridge', icon: '🌉', color: '#8b5cf6', colorGlow: 'rgba(139, 92, 246, 0.1)' },
+              { id: 'sync', name: 'Rules Sync', icon: '⚡', color: '#06b6d4', colorGlow: 'rgba(6, 182, 212, 0.1)' },
+              { id: 'budget', name: 'Token Budget', icon: '📊', color: '#f59e0b', colorGlow: 'rgba(245, 158, 11, 0.1)' },
+              { id: 'mcp', name: 'MCP Integration', icon: '🔌', color: '#a78bfa', colorGlow: 'rgba(167, 139, 250, 0.1)' },
+              { id: 'setup', name: 'One-Click Setup', icon: '🎯', color: '#10b981', colorGlow: 'rgba(16, 185, 129, 0.1)' }
+            ].map(tab => {
+              const isActive = activeGuideTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveGuideTab(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: '1px solid',
+                    borderColor: isActive ? tab.color : 'rgba(255, 255, 255, 0.04)',
+                    background: isActive ? tab.colorGlow : 'rgba(255, 255, 255, 0.01)',
+                    color: isActive ? '#ffffff' : 'var(--text-muted)',
+                    fontWeight: isActive ? 700 : 500,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'var(--transition-smooth)',
+                    boxShadow: isActive ? `0 4px 12px ${tab.color}15` : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.color = tab.color;
+                      e.currentTarget.style.borderColor = `${tab.color}40`;
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                      e.currentTarget.style.transform = 'translateX(4px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.color = 'var(--text-muted)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.04)';
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.01)';
+                      e.currentTarget.style.transform = 'none';
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '1.1rem' }}>{tab.icon}</span>
+                    <span>{tab.name}</span>
+                  </div>
+                  {isActive && (
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: tab.color,
+                      boxShadow: `0 0 8px ${tab.color}`
+                    }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Right Side: Tab Visual Display Console */}
+          <div style={{
+            flex: 1,
+            minWidth: '320px',
+            background: 'rgba(0,0,0,0.2)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '16px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            gap: '20px',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            {/* Decorative background glow */}
+            <div style={{
+              position: 'absolute',
+              top: '-40%',
+              right: '-10%',
+              width: '220px',
+              height: '220px',
+              borderRadius: '50%',
+              background: activeGuideTab === 'bridge' ? 'rgba(139, 92, 246, 0.08)' :
+                          activeGuideTab === 'sync' ? 'rgba(6, 182, 212, 0.08)' :
+                          activeGuideTab === 'budget' ? 'rgba(245, 158, 11, 0.08)' :
+                          activeGuideTab === 'mcp' ? 'rgba(167, 139, 250, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+              filter: 'blur(35px)',
+              pointerEvents: 'none'
+            }} />
+
+            {activeGuideTab === 'bridge' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h4 style={{ color: '#a78bfa', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span>🌉</span> Context Bridge & Session Handover
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    Transfer active coding sessions between Claude Code, Cursor, and other editors instantly. NextRouter extracts your conversation transcripts, active goals, and uncommitted changes into a unified markdown package, enabling the target assistant to pick up exactly where you left off.
+                  </p>
+                </div>
+
+                {/* Flow diagram */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Visual Data Flow:</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '16px 20px',
+                    background: 'rgba(0,0,0,0.25)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '20px', padding: '6px 12px', fontSize: '0.78rem', color: '#a78bfa', boxShadow: '0 0 10px rgba(139,92,246,0.1)' }}>
+                      <span>🐚</span> <span style={{ fontWeight: 600 }}>Claude Code</span>
+                    </div>
+                    <div style={{ display: 'flex', flex: 1, minWidth: '40px', height: '2px', background: 'linear-gradient(to right, #8b5cf6, #06b6d4)', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', background: '#090d16', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '2px 8px', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>handover.md</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '20px', padding: '6px 12px', fontSize: '0.78rem', color: '#22d3ee', boxShadow: '0 0 10px rgba(6,182,212,0.1)' }}>
+                      <span>🎯</span> <span style={{ fontWeight: 600 }}>Cursor</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console simulator */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ display: 'flex', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff5f56' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ffbd2e' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#27c93f' }} />
+                  </div>
+                  <div style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', lineHeight: '1.6', color: '#cbd5e1' }}>
+                    <div style={{ color: '#64748b' }}>$ nextrouter handover claude-code --target cursor</div>
+                    <div style={{ color: '#34d399' }}>✓ Handover package successfully generated!</div>
+                    <div style={{ color: '#60a5fa' }}>⚡ Injecting context briefing directly into Cursor database...</div>
+                    <div style={{ color: '#10b981' }}>✓ Context successfully bridged! Cursor is ready to resume.</div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeGuideTab === 'sync' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h4 style={{ color: '#22d3ee', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span>⚡</span> Rules & Active Plan Sync
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    Ensure prompt rules, plan lists, and custom skills remain perfectly synchronized. NextRouter's file watcher watches for changes in rules files or `skills/` and immediately syncs them bidirectionally across all active configuration files.
+                  </p>
+                </div>
+
+                {/* Flow diagram */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Visual Data Flow:</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '16px 20px',
+                    background: 'rgba(0,0,0,0.25)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.72rem', color: '#fbbf24' }}>
+                        <span>🎯</span> <code>plan.md</code>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.72rem', color: '#34d399' }}>
+                        <span>🧩</span> <code>skills/</code>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flex: 1, minWidth: '40px', height: '2px', background: 'linear-gradient(to right, #fbbf24, #a78bfa)', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', background: '#090d16', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '2px 8px', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Sync Engine</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <code>.cursorrules</code>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <code>CLAUDE.md</code>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console simulator */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ display: 'flex', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff5f56' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ffbd2e' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#27c93f' }} />
+                  </div>
+                  <div style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', lineHeight: '1.6', color: '#cbd5e1' }}>
+                    <div style={{ color: '#64748b' }}># rule changes detected in plan.md</div>
+                    <div style={{ color: '#fbbf24' }}>[Watcher] File updated: plan.md</div>
+                    <div style={{ color: '#a78bfa' }}>[Sync] Injecting active checklist items (4 complete, 1 remaining)</div>
+                    <div style={{ color: '#34d399' }}>✓ Synced rules successfully to .cursorrules and CLAUDE.md!</div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeGuideTab === 'budget' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h4 style={{ color: '#fbbf24', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span>📊</span> Context Window & Request Budgets
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    Prevent token waste and rate limits. NextRouter tracks token consumption relative to each provider's context window. If a session reaches **90%** of its capacity, NextRouter triggers a native OS desktop notification.
+                  </p>
+                </div>
+
+                {/* Progress indicators simulator */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  padding: '16px 20px',
+                  background: 'rgba(0,0,0,0.25)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.05)'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                      <span style={{ fontWeight: 600 }}>Claude Code (Sonnet 3.5) Context Budget</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>91% Used</span>
+                    </div>
+                    <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: '91%', background: 'linear-gradient(to right, #f59e0b, #ef4444)', borderRadius: '4px' }} />
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>182,000 / 200,000 tokens consumed</span>
+                  </div>
+                </div>
+
+                {/* Alert simulator */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  alignItems: 'center'
+                }}>
+                  <span style={{ fontSize: '1.3rem' }}>🚨</span>
+                  <div>
+                    <h5 style={{ margin: 0, fontSize: '0.82rem', color: '#f87171', fontWeight: 600 }}>High Context Alert (Claude Code)</h5>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'rgba(248, 113, 113, 0.8)' }}>
+                      Active session has exceeded 90% of model window. Recommend context handoff.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeGuideTab === 'mcp' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h4 style={{ color: '#a78bfa', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span>🔌</span> Model Context Protocol (MCP) Standard
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    Expose NextRouter tools directly into your AI terminals and editors. By exposing standard tools like `get_shared_context`, `save_context`, and `get_active_plan`, AI assistants natively check for cross-provider active handovers on session boot.
+                  </p>
+                </div>
+
+                {/* Visual flow chart */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Visual Data Flow:</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '16px 20px',
+                    background: 'rgba(0,0,0,0.25)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', color: 'var(--text-main)' }}>
+                      <span>🐚</span> Claude Code CLI
+                    </div>
+                    <div style={{ display: 'flex', flex: 1, minWidth: '40px', height: '2px', background: 'linear-gradient(to right, #8b5cf6, #34d399)', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', background: '#090d16', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '2px 8px', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>get_shared_context()</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', color: '#34d399' }}>
+                      <span>🔌</span> MCP Server
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console simulator */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ display: 'flex', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff5f56' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ffbd2e' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#27c93f' }} />
+                  </div>
+                  <div style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', lineHeight: '1.6', color: '#cbd5e1' }}>
+                    <div style={{ color: '#64748b' }}># Assistant calls nextrouter MCP server tool on first load</div>
+                    <div style={{ color: '#a78bfa' }}>mcp.callTool("get_shared_context", {"{ workspacePath: \"~/Work/my-project\" }"})</div>
+                    <div style={{ color: '#34d399' }}>→ Found active handover context from Cursor (Last active 3m ago, saved $0.42)</div>
+                    <div style={{ color: '#cbd5e1' }}>🔄 Suggesting context resumption to user...</div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeGuideTab === 'setup' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h4 style={{ color: '#10b981', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span>🎯</span> One-Click Setup & Environment Sync
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    Install the sync engine natively on your machine. Running setup registers NextRouter MCP servers globally in Claude Code and Cursor configurations, configures shell aliases, downloads SQLite binaries, and starts the rule sync watcher daemon.
+                  </p>
+                </div>
+
+                {/* Visual flow chart */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Visual Setup Chain:</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '16px 20px',
+                    background: 'rgba(0,0,0,0.25)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', color: '#10b981' }}>
+                      <span>🐚</span> Shell Profile Alias
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', color: '#22d3ee' }}>
+                      <span>🔌</span> IDE Global MCPs
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', color: '#a78bfa' }}>
+                      <span>🤖</span> Watcher Daemon
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console simulator */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ display: 'flex', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff5f56' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ffbd2e' }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#27c93f' }} />
+                  </div>
+                  <div style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', lineHeight: '1.6', color: '#cbd5e1' }}>
+                    <div style={{ color: '#64748b' }}>$ npm run setup</div>
+                    <div style={{ color: '#34d399' }}>✓ Cursor global config updated (~/.cursor/mcp.json)</div>
+                    <div style={{ color: '#34d399' }}>✓ Registered nextrouter shell alias inside shell profile</div>
+                    <div style={{ color: '#34d399' }}>✓ Watcher daemon successfully spawned in background! (PID: 4892)</div>
+                  </div>
+                </div>
+              </>
+            )}
+            
+            {/* Visual tip footer */}
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '8px', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>💡 Tip: {activeGuideTab === 'bridge' ? 'Try automated injection by selecting a session!' :
+                            activeGuideTab === 'sync' ? 'Rules sync runs automatically in the background via the Daemon.' :
+                            activeGuideTab === 'budget' ? 'Watch budget bars under each provider on the right.' :
+                            activeGuideTab === 'mcp' ? 'Connected assistants check this before calling server providers.' : 'Click "Local Setup" in Services on the right.'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
 
       {/* Tabs navigation */}
       <div style={{
         display: 'flex',
-        gap: '12px',
+        gap: '8px',
         borderBottom: '1px solid var(--border-color)',
-        paddingBottom: '12px',
+        paddingBottom: '8px',
         overflowX: 'auto'
       }}>
         {steps.map(s => (
@@ -173,17 +556,17 @@ export default function OnboardingWalkthroughPage() {
             key={s.id}
             onClick={() => setActiveStep(s.id)}
             style={{
-              padding: '10px 16px',
+              padding: '8px 14px',
               borderRadius: '8px',
               background: activeStep === s.id ? 'var(--color-primary-glow)' : 'transparent',
               border: `1px solid ${activeStep === s.id ? 'var(--border-color-active)' : 'transparent'}`,
               color: activeStep === s.id ? 'var(--color-primary)' : 'var(--text-muted)',
               cursor: 'pointer',
               fontWeight: activeStep === s.id ? 600 : 500,
-              fontSize: '0.9rem',
+              fontSize: '0.85rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
               transition: 'var(--transition-smooth)',
               whiteSpace: 'nowrap'
             }}
@@ -195,32 +578,31 @@ export default function OnboardingWalkthroughPage() {
       </div>
 
       {/* Content panel based on active step */}
-      <div className="glass-panel" style={{ padding: '32px', minHeight: '400px' }}>
+      <div className="glass-panel" style={{ padding: '24px', minHeight: '400px' }}>
         
         {activeStep === 'mcp' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>🔌 Connecting the Model Context Protocol (MCP) Server</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              Exposing NextRouter as an MCP server allows Claude Code, Cursor, and Antigravity to query your database, count tokens, sync rules, and automatically discover active sessions.
+            <h2 style={{ fontSize: '1.4rem', color: 'var(--color-primary)' }}>🔌 Connecting AI Assistants</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              NextRouter exposes an MCP server and plugins to enable Claude Code, Cursor, Copilot, and Antigravity to sync rules, budgets, and handovers automatically.
             </p>
 
             {/* One-Click Setup Alert Card */}
             <div style={{ 
-              background: 'rgba(139, 92, 246, 0.08)', 
+              background: 'rgba(139, 92, 246, 0.06)', 
               border: '1px solid var(--border-color-active)', 
-              borderRadius: '16px', 
-              padding: '24px', 
+              borderRadius: '12px', 
+              padding: '20px', 
               display: 'flex', 
               flexDirection: 'column', 
-              gap: '16px',
-              animation: 'pulse-glow 3s infinite'
+              gap: '12px'
             }}>
               <div>
-                <h3 style={{ fontSize: '1.2rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span>⚡</span> One-Click Auto Setup (Recommended)
+                <h3 style={{ fontSize: '1.1rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span>⚡</span> One-Click Auto Laptop Setup (Recommended)
                 </h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
-                  Click this button to configure everything automatically on your local laptop: registers MCP servers in Claude, Cursor, and Antigravity, adds shell alias commands, syncs all coding rules/skills, and runs the background daemon process.
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                  Automatically configures everything locally: registers MCP servers in Claude/Cursor/Antigravity, sets up command aliases, syncs rules/skills, and runs the sync daemon.
                 </p>
               </div>
               <button
@@ -229,117 +611,263 @@ export default function OnboardingWalkthroughPage() {
                 disabled={settingUp}
                 style={{
                   width: 'fit-content',
-                  padding: '12px 24px',
+                  padding: '10px 20px',
                   background: 'linear-gradient(to right, #8b5cf6, #06b6d4)',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   fontWeight: 700,
-                  fontSize: '0.95rem',
+                  fontSize: '0.85rem',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 20px rgba(139, 92, 246, 0.35)'
+                  boxShadow: '0 4px 14px rgba(139, 92, 246, 0.25)'
                 }}
               >
                 {settingUp ? '⚙️ Automating Setup...' : '⚡ Configure Local Laptop Automatically'}
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🎨</span> Cursor Setup
-                </h3>
-                <ol style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  <li>Open Cursor Settings → <strong>Features</strong> → <strong>MCP</strong>.</li>
-                  <li>Click <strong>+ Add New MCP Server</strong>.</li>
-                  <li>Enter the parameters:
-                    <ul style={{ paddingLeft: '20px', marginTop: '6px', listStyleType: 'square' }}>
-                      <li><strong>Name</strong>: <code>NextRouter</code></li>
-                      <li><strong>Type</strong>: <code>command</code> (or <code>stdio</code>)</li>
-                      <li><strong>Command</strong>:</li>
+            {/* Plugin Status Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Active Assistant Plugins</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                {pluginStatuses.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading plugin status...</div>
+                ) : (
+                  pluginStatuses.map(plugin => (
+                    <div key={plugin.providerId} style={{
+                      padding: '16px',
+                      borderRadius: '10px',
+                      border: `1px solid ${plugin.installed ? plugin.color + '30' : 'var(--border-color)'}`,
+                      background: plugin.installed ? plugin.color + '05' : 'rgba(255,255,255,0.01)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            width: '8px', height: '8px', borderRadius: '50%',
+                            background: plugin.installed ? plugin.color : 'var(--text-dark)',
+                            boxShadow: plugin.installed ? `0 0 6px ${plugin.color}` : 'none'
+                          }} />
+                          <strong style={{ fontSize: '0.9rem', color: plugin.installed ? plugin.color : 'var(--text-main)' }}>
+                            {plugin.providerName}
+                          </strong>
+                        </div>
+                        <span style={{ fontSize: '0.72rem', color: plugin.installed ? 'var(--color-success)' : 'var(--text-muted)' }}>
+                          {plugin.installed ? 'Installed' : 'Not configured'}
+                        </span>
+                      </div>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleInstallPlugin(plugin.providerId)}
+                        disabled={installingPlugin === plugin.providerId}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '0.75rem',
+                          borderRadius: '6px',
+                          background: plugin.installed ? 'transparent' : 'var(--color-primary-glow)',
+                          color: plugin.installed ? 'var(--text-muted)' : 'var(--color-primary)',
+                          border: '1px solid',
+                          borderColor: plugin.installed ? 'var(--border-color)' : 'var(--color-primary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {installingPlugin === plugin.providerId ? '⏳' : plugin.installed ? 'Reinstall' : 'Install'}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Provider Integration Guides & Manual Configs */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '10px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Manual Setup & Documentation</h3>
+              
+              {/* Sub-tabs for Providers */}
+              <div style={{ 
+                display: 'flex', 
+                gap: '4px', 
+                background: 'rgba(255, 255, 255, 0.02)', 
+                padding: '4px', 
+                borderRadius: '8px', 
+                width: 'fit-content', 
+                border: '1px solid var(--border-color)'
+              }}>
+                {[
+                  { id: 'claude', name: 'Claude Code', color: '#8b5cf6' },
+                  { id: 'cursor', name: 'Cursor', color: '#06b6d4' },
+                  { id: 'antigravity', name: 'Antigravity', color: '#f59e0b' },
+                  { id: 'copilot', name: 'GitHub Copilot', color: '#10b981' },
+                  { id: 'gemini', name: 'Gemini / Google AI', color: '#4285f4' }
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setActiveProviderTab(p.id)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: activeProviderTab === p.id ? p.color : 'transparent',
+                      color: activeProviderTab === p.id ? '#ffffff' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      fontSize: '0.78rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Dynamic Sub-tab content */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.01)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                padding: '20px'
+              }}>
+                {/* Claude Code Details */}
+                {activeProviderTab === 'claude' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Run this command inside your terminal:</span>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '12px', 
+                        background: 'rgba(0, 0, 0, 0.3)', 
+                        padding: '10px 14px', 
+                        borderRadius: '6px', 
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.78rem',
+                        border: '1px solid var(--border-color)'
+                      }}>
+                        <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap' }}>{claudeCommand}</span>
+                        <button className="btn btn-secondary" onClick={() => handleCopy(claudeCommand, setCopiedClaude)} style={{ padding: '4px 10px', fontSize: '0.72rem' }}>
+                          {copiedClaude ? '✅' : '📋 Copy'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                      <h4 style={{ fontSize: '#a78bfa', color: '#a78bfa', marginBottom: '8px' }}>Active Integration Features:</h4>
+                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                        <li><strong>Rule Synchronization:</strong> NextRouter updates `CLAUDE.md` in your project root, injecting rules and workspace plan files automatically.</li>
+                        <li><strong>Global Slash Commands:</strong> Once installed, commands like `/nr-status`, `/nr-sync`, `/nr-tokens`, `/nr-prune`, and `/nr-handover` are registered globally inside Claude Code.</li>
+                        <li><strong>Context Monitoring:</strong> Automatically parses `~/.claude.json` and session logs to reconstruct active history.</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cursor Details */}
+                {activeProviderTab === 'cursor' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Configure MCP server inside Cursor settings:</span>
+                      <ol style={{ paddingLeft: '18px', fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <li>Navigate to <strong>Cursor Settings</strong> → <strong>Features</strong> → <strong>MCP</strong>.</li>
+                        <li>Click <strong>+ Add New MCP Server</strong>: set Name to <code>NextRouter</code>, Type to <code>command</code>.</li>
+                        <li>Paste this command in the Command box:</li>
+                      </ol>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '12px', 
+                        background: 'rgba(0, 0, 0, 0.3)', 
+                        padding: '10px 14px', 
+                        borderRadius: '6px', 
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.78rem',
+                        border: '1px solid var(--border-color)',
+                        marginTop: '4px'
+                      }}>
+                        <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap' }}>{mcpCommand}</span>
+                        <button className="btn btn-secondary" onClick={() => handleCopy(mcpCommand, setCopiedMcp)} style={{ padding: '4px 10px', fontSize: '0.72rem' }}>
+                          {copiedMcp ? '✅' : '📋 Copy'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                      <h4 style={{ color: '#22d3ee', marginBottom: '8px' }}>Active Integration Features:</h4>
+                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                        <li><strong>Always-Applied MDC Rules:</strong> Automatically installs `.cursor/rules/nextrouter-commands.mdc` to guide Cursor on using MCP tools dynamically.</li>
+                        <li><strong>SQLite Log Extraction:</strong> Indexes Cursor SQLite `store.db` chats from `~/.cursor/chats/` to monitor context sizes and project-scoped details.</li>
+                        <li><strong>Rules Injection:</strong> Synchronizes coding rules, custom skills, and plans to `.cursorrules` in your project root.</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Antigravity Details */}
+                {activeProviderTab === 'antigravity' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                        Configure Antigravity global settings by running this built-in Node command in your terminal:
+                      </span>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '12px', 
+                        background: 'rgba(0, 0, 0, 0.3)', 
+                        padding: '10px 14px', 
+                        borderRadius: '6px', 
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.78rem',
+                        border: '1px solid var(--border-color)',
+                        marginTop: '4px'
+                      }}>
+                        <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{antigravityCommand}</span>
+                        <button className="btn btn-secondary" onClick={() => handleCopy(antigravityCommand, setCopiedAntigravity)} style={{ padding: '4px 10px', fontSize: '0.72rem', alignSelf: 'flex-start' }}>
+                          {copiedAntigravity ? '✅' : '📋 Copy'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                      <h4 style={{ color: 'var(--color-success)', marginBottom: '8px' }}>Active Integration Features:</h4>
+                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                        <li><strong>Rules Integration:</strong> Synchronizes global prompt rules and custom skills into `GEMINI.md` in your project root.</li>
+                        <li><strong>Transcript Parsing:</strong> Parses transcript JSONL files to reconstruct conversation logs and token statistics.</li>
+                        <li><strong>Automatic Settings Injection:</strong> Registers NextRouter to `~/.gemini/settings.json` so the Gemini CLI can communicate natively.</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Copilot Details */}
+                {activeProviderTab === 'copilot' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', animation: 'fadeIn 0.2s ease-out' }}>
+                    <h4 style={{ color: '#34d399' }}>Copilot Chat Handover Guides</h4>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                      Copilot Chat inside VS Code reads configuration rules from <code>.github/copilot-instructions.md</code>.
+                    </p>
+                    <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                      <li><strong>Custom Instructions:</strong> NextRouter updates <code>.github/copilot-instructions.md</code> to synchronize prompt rules and universal skills.</li>
+                      <li><strong>Manual Handovers:</strong> Since Copilot doesn't expose a session database, use the **Context Bridge** tab to generate briefing packages, copy the markdown, and paste it into the Copilot chat window.</li>
                     </ul>
-                  </li>
-                </ol>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px', 
-                  background: 'rgba(0, 0, 0, 0.3)', 
-                  padding: '12px', 
-                  borderRadius: '6px', 
-                  marginTop: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.8rem',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap' }}>{mcpCommand}</span>
-                  <button className="btn btn-secondary" onClick={() => handleCopy(mcpCommand, setCopiedMcp)} style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
-                    {copiedMcp ? '✅ Copied!' : '📋 Copy'}
-                  </button>
-                </div>
-              </div>
+                  </div>
+                )}
 
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🐚</span> Claude Code Setup
-                </h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                  Run the following CLI command in your terminal inside your active project:
-                </p>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px', 
-                  background: 'rgba(0, 0, 0, 0.3)', 
-                  padding: '12px', 
-                  borderRadius: '6px', 
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.8rem',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap' }}>{claudeCommand}</span>
-                  <button className="btn btn-secondary" onClick={() => handleCopy(claudeCommand, setCopiedClaude)} style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
-                    {copiedClaude ? '✅ Copied!' : '📋 Copy'}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🌌</span> Antigravity Setup
-                </h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
-                  Run the following command in your terminal to safely configure the Antigravity global MCP server (merging into <code>~/.gemini/antigravity/mcp_config.json</code> without overwriting existing servers):
-                </p>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px', 
-                  background: 'rgba(0, 0, 0, 0.3)', 
-                  padding: '12px', 
-                  borderRadius: '6px', 
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.8rem',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <span style={{ flex: 1, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{antigravityCommand}</span>
-                  <button className="btn btn-secondary" onClick={() => handleCopy(antigravityCommand, setCopiedAntigravity)} style={{ padding: '6px 12px', fontSize: '0.75rem', alignSelf: 'flex-start' }}>
-                    {copiedAntigravity ? '✅ Copied!' : '📋 Copy'}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>♊</span> Gemini / Google AI Setup
-                </h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
-                  Gemini integrates rules via project-level Markdown files and tool definitions:
-                </p>
-                <ol style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  <li><strong>Rules File:</strong> Create a <code>GEMINI.md</code> in your project root. NextRouter automatically synchronizes global prompt rules and custom skills into this file during the Rules Sync step.</li>
-                  <li><strong>Prompt Injection:</strong> Prepend the content of <code>GEMINI.md</code> as system instructions in your Gemini API requests or model configuration.</li>
-                  <li><strong>MCP Client Integration:</strong> Use the official MCP JS/Python SDK to register NextRouter's stdio transport command (<code>npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/mcp.ts</code>) as an active tool.</li>
-                </ol>
+                {/* Gemini Details */}
+                {activeProviderTab === 'gemini' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', animation: 'fadeIn 0.2s ease-out' }}>
+                    <h4 style={{ color: '#669df6' }}>Gemini / Google AI Setup</h4>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                      Gemini integrates rules via project-level Markdown files and tool definitions:
+                    </p>
+                    <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                      <li><strong>Rules File:</strong> NextRouter automatically synchronizes global prompt rules and custom skills into <code>GEMINI.md</code> in your project root.</li>
+                      <li><strong>Prompt Injection:</strong> Prepend the content of <code>GEMINI.md</code> as system instructions in your Gemini API requests.</li>
+                      <li><strong>MCP Client Integration:</strong> Register NextRouter's stdio transport command (<code>{mcpCommand}</code>) inside your Gemini SDK runner or client.</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -347,66 +875,46 @@ export default function OnboardingWalkthroughPage() {
 
         {activeStep === 'handoff' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>🔄 Automated Handoffs via Shared Context</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              We have pre-configured a default universal skill in your workspace that automates handovers when you launch a session with any assistant.
+            <h2 style={{ fontSize: '1.4rem', color: 'var(--color-primary)' }}>🔄 Context Bridge & Automated Handoffs</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              NextRouter allows you to bridge conversational history, modified files, uncommitted git diffs, and project plans across AI assistants.
             </p>
-            <div style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid var(--border-color-active)', borderRadius: '12px', padding: '24px' }}>
-              <h3 style={{ fontSize: '1.15rem', color: 'var(--color-primary)', marginBottom: '10px' }}>How it works:</h3>
-              <ol style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
-                <li>NextRouter automatically loaded the skill located at <code style={{ color: 'var(--text-main)' }}>skills/mcp-shared-context.md</code>.</li>
-                <li>When you synchronize rules (using the <strong>Push & Sync</strong> button on the Rules page or running <code>npm run cli sync</code>), this instruction gets auto-injected into `.cursorrules`, `CLAUDE.md`, and `GEMINI.md`.</li>
-                <li>When you start a new conversation in Claude Code, Cursor, or Antigravity, the AI reads this instruction and immediately uses the MCP tools to query the active shared context database.</li>
-                <li>If the model detects an active conversation from another provider, it will automatically prompt you:
-                  <div style={{ 
-                    marginTop: '12px', 
-                    padding: '16px', 
-                    background: 'rgba(0, 0, 0, 0.3)', 
-                    borderRadius: '8px', 
-                    borderLeft: '4px solid var(--color-primary)',
-                    fontFamily: 'var(--font-sans)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem'
-                  }}>
-                    🔄 <strong>NextRouter Context Handoff Detected</strong><br/>
-                    I detected an active session from <strong>Claude Code</strong> on the task: <em>"Implement DB Connection helper"</em>. Would you like me to pull the context and resume this task?
-                  </div>
-                </li>
-                <li>Saying <strong>"yes"</strong> makes the model load the handover packet and resume work seamlessly without you copying anything manually!</li>
-              </ol>
-            </div>
-          </div>
-        )}
 
-        {activeStep === 'bridge' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>⚡ Copy Handovers manually via Context Bridge</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              If you are using a provider that does not support MCP (like Copilot Chat) or want a quick copyable summary, you can compile handover briefs manually using the Context Bridge tab.
-            </p>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '24px',
-              marginTop: '12px'
-            }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>1. Select Source & Target</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  Select the provider you are switching <strong>from</strong> (e.g. Claude Code) and the target provider you are switching <strong>to</strong> (e.g. Cursor).
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+              {/* Option A: Auto-Handoff */}
+              <div style={{ background: 'rgba(139, 92, 246, 0.03)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem', color: '#a78bfa' }}>🤖 Option A: Automated MCP Handoff</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  NextRouter injects a shared context check protocol into your rule files. At the start of a session, the assistant will automatically scan the workspace.
+                </p>
+                <div style={{ 
+                  marginTop: '6px', 
+                  padding: '12px', 
+                  background: 'rgba(0, 0, 0, 0.25)', 
+                  borderRadius: '6px', 
+                  borderLeft: '3px solid var(--color-primary)',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-main)'
+                }}>
+                  🔄 <strong>NextRouter Context Handoff Detected</strong><br/>
+                  I detected an active session from <strong>Claude Code</strong> on task: <em>"Refactor authentication"</em>. Would you like me to pull the context?
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                  Simply reply <strong>"yes"</strong> to load the context packet and resume work seamlessly!
                 </p>
               </div>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>2. Load the Session</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  The dropdown will automatically pull active logs scanned from your disk. Select the conversation you want to handover.
+
+              {/* Option B: Manual Context Bridge */}
+              <div style={{ background: 'rgba(6, 182, 212, 0.03)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem', color: '#22d3ee' }}>⚡ Option B: Manual Context Bridge</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  If a provider doesn't support MCP (like Copilot Chat) or you want to copy the briefing manually:
                 </p>
-              </div>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>3. Generate & Copy</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  Click <strong>Generate Handover Packet</strong>, copy the markdown, and paste it directly into your new assistant session. The AI will ingest the state and resume work immediately!
-                </p>
+                <ol style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  <li>Go to the <strong>Context Bridge</strong> tab on the Dashboard.</li>
+                  <li>Select the source session, target provider, and mode (Briefing / Original).</li>
+                  <li>Click <strong>Generate Handover Packet</strong>, copy the compiled markdown briefing, and paste it directly into your new assistant chat window.</li>
+                </ol>
               </div>
             </div>
           </div>
@@ -414,374 +922,37 @@ export default function OnboardingWalkthroughPage() {
 
         {activeStep === 'rules' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>⚙️ Syncing System Rules Across Providers</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              Normally, you would duplicate rules across <code>.cursorrules</code>, <code>CLAUDE.md</code>, and <code>GEMINI.md</code>. The Rules Manager solves this.
+            <h2 style={{ fontSize: '1.4rem', color: 'var(--color-primary)' }}>⚙️ Rules & Universal Skills Synchronization</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              Keep prompt configurations, coding standards, and active plans synchronized across all active providers in your workspace.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ fontSize: '1.5rem' }}>🖊️</span>
-                <div>
-                  <h4 style={{ fontWeight: 600 }}>Edit Rules in One Tab</h4>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Edit any provider rules configuration file using the built-in text editor.</p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ fontSize: '1.5rem' }}>🔄</span>
-                <div>
-                  <h4 style={{ fontWeight: 600 }}>Bidirectional Rule Synchronization</h4>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Clicking "Push & Sync" translates and synchronizes changes to all other configuration formats automatically.</p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ fontSize: '1.5rem' }}>👀</span>
-                <div>
-                  <h4 style={{ fontWeight: 600 }}>Rules Watching</h4>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>NextRouter runs a background file watcher. When you save a rule file locally in your IDE, the changes are automatically parsed, loaded to the dashboard database, and synced to other providers.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {activeStep === 'skills' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>🧩 Creating Universal Skills & Custom Rules</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              Universal Skills are prompt packages or coding standards that apply to <strong>all</strong> assistants. NextRouter lets you manage them globally.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Create via Dashboard</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  Navigate to the <strong>Universal Skills</strong> tab, click <strong>Create New Skill</strong>, write your rules in markdown, and check <strong>Auto-inject this skill</strong>. The next sync will propagate it to all providers.
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              {/* Bidirectional Rules Sync */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem' }}>🔄 Bidirectional Rules Sync</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  Edit rules in one place and let NextRouter propagate them. Updates to `CLAUDE.md`, `.cursorrules`, or `GEMINI.md` automatically sync across all other provider formats.
+                </p>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Run <code>npm run cli sync</code> or click **Push & Sync** on the Rules & Skills page to trigger.
                 </p>
               </div>
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Create via Git/Filesystem</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  Write a markdown file inside the <code>skills/</code> folder in your project root. You can configure versioning and auto-injection settings by writing a simple YAML frontmatter block at the top of the file.
+
+              {/* Universal Skills */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem' }}>🧩 Universal Prompt Skills</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  Write custom markdown coding guidelines inside the <code>skills/</code> folder. Adding a YAML frontmatter with `auto_inject: true` automatically appends them to all rules configurations.
                 </p>
               </div>
-            </div>
-          </div>
-        )}
 
-        {activeStep === 'providers' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>🤖 Provider Integration Guides</h2>
-            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              NextRouter coordinates context budgets, rules, and timelines across multiple active coding assistants. Select a provider below to view its onboarding details:
-            </p>
-
-            {/* Sub-tabs for Providers */}
-            <div style={{ 
-              display: 'flex', 
-              gap: '8px', 
-              background: 'rgba(255, 255, 255, 0.02)', 
-              padding: '6px', 
-              borderRadius: '12px', 
-              width: 'fit-content', 
-              border: '1px solid var(--border-color)',
-              marginBottom: '8px'
-            }}>
-              {[
-                { id: 'claude', name: 'Claude Code', color: '#8b5cf6' },
-                { id: 'cursor', name: 'Cursor', color: '#06b6d4' },
-                { id: 'copilot', name: 'GitHub Copilot', color: '#10b981' },
-                { id: 'antigravity', name: 'Antigravity', color: '#f59e0b' },
-                { id: 'gemini', name: 'Gemini / Google AI', color: '#4285f4' }
-              ].map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => setActiveProviderTab(p.id)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: activeProviderTab === p.id ? p.color : 'transparent',
-                    color: activeProviderTab === p.id ? '#ffffff' : 'var(--text-muted)',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Claude Code Details */}
-            {activeProviderTab === 'claude' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: '#a78bfa' }}>🌟 Seamless Claude Code Handoffs</h3>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.9rem' }}>
-                    <li><strong>Context Synchronization:</strong> NextRouter automatically monitors active session log files located in your home directory (e.g. <code>~/.claude.jsonl</code> or <code>~/.claude/</code>) to sync conversation states in real-time.</li>
-                    <li><strong>Instructions Standard:</strong> NextRouter targets the <code>CLAUDE.md</code> file in your project root. Any updates made in the Rules Manager or global skills will be injected directly here.</li>
-                    <li><strong>Connecting MCP Server:</strong> Simply execute the <code>claude mcp add nextrouter ...</code> command as described in the <strong>MCP Setup</strong> tab to enable Claude Code to call NextRouter APIs.</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {/* Cursor Details */}
-            {activeProviderTab === 'cursor' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '16px', color: '#22d3ee' }}>🖱️ Cursor — MCP + Rules Integration</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 1 — Install the NextRouter Plugin</strong>
-                      <p>Use the Install Plugins step (step 7) or run this command. It writes two files: an MDC rule and the MCP server config.</p>
-                      <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', color: '#e2e8f0', marginTop: '8px', overflowX: 'auto' }}>{`npx tsx src/cli/index.ts install-plugin cursor`}</pre>
-                      <p style={{ marginTop: '8px', fontSize: '0.82rem' }}>This creates <code>.cursor/rules/nextrouter-commands.mdc</code> (always-applied rule) and <code>.cursor/mcp.json</code> (MCP server registration).</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 2 — Restart Cursor</strong>
-                      <p>Cursor reads <code>.cursor/mcp.json</code> on startup. Restart Cursor (or reload the window with Cmd+Shift+P → &quot;Reload Window&quot;) to activate the MCP connection.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 3 — Verify MCP is Active</strong>
-                      <p>In Cursor chat, ask: <em>&quot;What tools do you have available?&quot;</em> — you should see <code>get_shared_context</code>, <code>get_handover</code>, <code>sync_rules</code>, and others listed.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>How It Works</strong>
-                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <li><strong>Session reading:</strong> NextRouter reads Cursor&apos;s local SQLite chat databases from <code>~/.cursor/chats/</code> to extract sessions, token counts, and workspace paths.</li>
-                        <li><strong>Rules sync:</strong> NextRouter reads/writes <code>.cursorrules</code> and <code>.cursor/rules/*.mdc</code>. Universal skills are injected automatically.</li>
-                        <li><strong>MDC rule:</strong> The <code>nextrouter-commands.mdc</code> rule has <code>alwaysApply: true</code>, meaning Cursor loads it in every chat — no user action needed.</li>
-                      </ul>
-                    </div>
-                    <div style={{ padding: '10px 14px', background: 'rgba(6, 182, 212, 0.06)', borderRadius: '8px', border: '1px solid rgba(6, 182, 212, 0.15)' }}>
-                      <strong style={{ fontSize: '0.82rem', color: '#22d3ee' }}>Config files written by installer:</strong>
-                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
-                        <code>.cursor/rules/nextrouter-commands.mdc</code> — Always-applied rule with MCP tool reference
-                        <code>.cursor/mcp.json</code> — MCP server registration (nextrouter → npx tsx src/cli/mcp.ts)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Copilot Details */}
-            {activeProviderTab === 'copilot' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: '#34d399' }}>🌟 Copilot Chat Handover Guides</h3>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.9rem' }}>
-                    <li><strong>Custom Instructions:</strong> GitHub Copilot in VS Code reads instructions from <code>.github/copilot-instructions.md</code>. NextRouter targets this file to sync unified project standards.</li>
-                    <li><strong>Manual Handovers:</strong> Since Copilot doesn't expose a database API, use the **Context Bridge** to compile handovers manually, copy the markdown briefing, and paste it into the Copilot chat box to reconstruct context.</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {/* Antigravity Details */}
-            {activeProviderTab === 'antigravity' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '16px', color: '#34d399' }}>🌀 Antigravity — Gemini CLI MCP Integration</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 1 — Install the NextRouter Plugin</strong>
-                      <p>Run the installer to register the MCP server and update GEMINI.md with tool usage instructions.</p>
-                      <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', color: '#e2e8f0', marginTop: '8px', overflowX: 'auto' }}>{`npx tsx src/cli/index.ts install-plugin antigravity`}</pre>
-                      <p style={{ marginTop: '8px', fontSize: '0.82rem' }}>This updates <code>GEMINI.md</code> with a rich NextRouter system context block and writes <code>~/.gemini/settings.json</code> with the MCP server entry.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 2 — Restart the Antigravity / Gemini CLI Session</strong>
-                      <p>Gemini CLI reads <code>~/.gemini/settings.json</code> at startup. Close and reopen your terminal session (or run <code>gemini</code> again) to pick up the new MCP server.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>Step 3 — Verify</strong>
-                      <p>In your Gemini CLI session, ask: <em>&quot;What MCP tools do you have?&quot;</em> — you should see <code>get_shared_context</code>, <code>get_handover</code>, <code>sync_rules</code>, and others.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>How It Works</strong>
-                      <ul style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <li><strong>Session reading:</strong> NextRouter reads Antigravity&apos;s transcript logs from <code>~/.gemini/antigravity/brain/[session-id]/.system_generated/logs/transcript.jsonl</code>.</li>
-                        <li><strong>Rules sync:</strong> NextRouter reads/writes <code>GEMINI.md</code> in your project root. Universal skills are injected on sync.</li>
-                        <li><strong>GEMINI.md block:</strong> The installer adds a <code>NEXTROUTER_COMMANDS_START/END</code> block with proactive MCP tool usage instructions.</li>
-                      </ul>
-                    </div>
-                    <div style={{ padding: '10px 14px', background: 'rgba(16, 185, 129, 0.06)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
-                      <strong style={{ fontSize: '0.82rem', color: '#34d399' }}>Config files written by installer:</strong>
-                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
-                        <code>GEMINI.md</code> — NextRouter commands block with proactive MCP tool instructions
-                        <code>~/.gemini/settings.json</code> — MCP server registration (nextrouter → npx tsx src/cli/mcp.ts)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Gemini Details */}
-            {activeProviderTab === 'gemini' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ background: 'rgba(66, 133, 244, 0.05)', border: '1px solid rgba(66, 133, 244, 0.15)', borderRadius: '12px', padding: '24px' }}>
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: '#669df6' }}>🌟 Gemini Assistant Integration & Rules Sync</h3>
-                  <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px', color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.9rem' }}>
-                    <li><strong>Standard Rules:</strong> NextRouter reads and writes rules to <code>GEMINI.md</code> in your project root, translating and syncing global system prompts dynamically.</li>
-                    <li><strong>Antigravity Workspace:</strong> Antigravity leverages Gemini's long context window. System-level settings and prompt directions are parsed directly from <code>GEMINI.md</code>.</li>
-                    <li><strong>Tool Execution:</strong> Ensure your Gemini API runner or CLI wrapper is equipped with tool call definitions pointing to the NextRouter MCP server to enable autonomous directory indexing and context recall.</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeStep === 'integrations' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-            <div>
-              <h2 style={{ fontSize: '1.5rem', color: 'var(--color-primary)', marginBottom: '8px' }}>
-                🔌 Provider Plugin Installation
-              </h2>
-              <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
-                Install NextRouter as a native plugin in each AI provider. For Claude Code, this creates global slash commands (<code>/nr-sync</code>, <code>/nr-handover</code>, etc.) available in any project. For Cursor, it creates an MDC rule. For Copilot, it creates VS Code tasks.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {pluginStatuses.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading plugin status...</div>
-              ) : (
-                pluginStatuses.map(plugin => (
-                  <div key={plugin.providerId} style={{
-                    padding: '20px',
-                    borderRadius: '12px',
-                    border: `1px solid ${plugin.installed ? plugin.color + '40' : 'var(--border-color)'}`,
-                    background: plugin.installed ? plugin.color + '08' : 'rgba(255,255,255,0.02)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    gap: '16px'
-                  }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{
-                          width: '10px', height: '10px', borderRadius: '50%',
-                          background: plugin.installed ? plugin.color : 'var(--text-dark)',
-                          boxShadow: plugin.installed ? `0 0 8px ${plugin.color}` : 'none',
-                          flexShrink: 0
-                        }} />
-                        <strong style={{ fontSize: '1rem', color: plugin.installed ? plugin.color : 'var(--text-main)' }}>
-                          {plugin.providerName}
-                        </strong>
-                        <span style={{
-                          fontSize: '0.7rem',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          background: plugin.installed ? plugin.color + '20' : 'rgba(255,255,255,0.05)',
-                          color: plugin.installed ? plugin.color : 'var(--text-muted)',
-                          fontWeight: 700
-                        }}>
-                          {plugin.installed ? 'INSTALLED' : 'NOT INSTALLED'}
-                        </span>
-                      </div>
-                      {plugin.installed && plugin.installedFiles.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          {plugin.installedFiles.map(f => (
-                            <code key={f} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                              ✓ {f}
-                            </code>
-                          ))}
-                        </div>
-                      )}
-                      {pluginLogs[plugin.providerId]?.length > 0 && (
-                        <div style={{
-                          marginTop: '4px',
-                          padding: '8px 12px',
-                          background: 'rgba(0,0,0,0.3)',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          color: 'var(--text-muted)',
-                          fontFamily: 'var(--font-mono)'
-                        }}>
-                          {pluginLogs[plugin.providerId].map((log, i) => (
-                            <div key={i}>{log}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => handleInstallPlugin(plugin.providerId)}
-                      disabled={installingPlugin === plugin.providerId}
-                      style={{
-                        padding: '8px 16px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        borderRadius: '8px',
-                        flexShrink: 0,
-                        background: plugin.installed ? 'rgba(255,255,255,0.03)' : 'var(--color-primary-glow)',
-                        color: plugin.installed ? 'var(--text-muted)' : 'var(--color-primary)',
-                        border: '1px solid',
-                        borderColor: plugin.installed ? 'var(--border-color)' : 'var(--color-primary)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {installingPlugin === plugin.providerId
-                        ? 'Installing...'
-                        : plugin.installed ? '↺ Reinstall' : '⚡ Install'}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div style={{ background: 'rgba(139, 92, 246, 0.04)', border: '1px solid rgba(139, 92, 246, 0.12)', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: '#a78bfa' }}>🐚 Claude Code Slash Commands</h3>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                After installing the Claude Code plugin, these slash commands are available globally in any Claude Code session:
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { cmd: '/nr-status', desc: 'Show active providers and sessions' },
-                  { cmd: '/nr-sync', desc: 'Sync rules across .cursorrules, CLAUDE.md, GEMINI.md' },
-                  { cmd: '/nr-handover [from] [to]', desc: 'Generate handover from latest session' },
-                  { cmd: '/nr-tokens', desc: 'Show token usage vs context window limits' },
-                  { cmd: '/nr-prune [file]', desc: 'Strip implementation bodies to save tokens' }
-                ].map(({ cmd, desc }) => (
-                  <div key={cmd} style={{ display: 'flex', gap: '12px', alignItems: 'baseline', fontSize: '0.85rem' }}>
-                    <code style={{ color: '#a78bfa', minWidth: '240px', fontFamily: 'var(--font-mono)' }}>{cmd}</code>
-                    <span style={{ color: 'var(--text-muted)' }}>{desc}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>🖥️ Live CLI Terminal Demo</h3>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                {(['status', 'sync', 'tokens', 'daemon'] as const).map(cmd => (
-                  <button
-                    key={cmd}
-                    onClick={() => setSelectedCliCommand(cmd)}
-                    className="btn btn-secondary"
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      background: selectedCliCommand === cmd ? 'var(--color-primary-glow)' : 'transparent',
-                      color: selectedCliCommand === cmd ? 'var(--color-primary)' : 'var(--text-muted)',
-                      border: '1px solid',
-                      borderColor: selectedCliCommand === cmd ? 'var(--color-primary)' : 'var(--border-color)',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {mockCliOutputs[cmd].cmd}
-                  </button>
-                ))}
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', lineHeight: '1.7', color: '#e2e8f0' }}>
-                <div style={{ marginBottom: '6px', color: '#64748b' }}>$ {mockCliOutputs[selectedCliCommand].cmd}</div>
-                {mockCliOutputs[selectedCliCommand].output}
+              {/* Active Plan Sync */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem' }}>🎯 Plan & Checklist Integration</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  If plan files (like <code>plan.md</code>, <code>task.md</code>, or superpower plugin plans under <code>**/plans/*.md</code>) exist, NextRouter extracts remaining/completed checklist items from the most recently modified plan and appends them to system instructions.
+                </p>
               </div>
             </div>
           </div>

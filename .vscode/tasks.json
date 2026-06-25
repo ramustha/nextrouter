@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "NextRouter: Status",
+      "type": "shell",
+      "command": "npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/index.ts status",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "NextRouter: Sync Rules",
+      "type": "shell",
+      "command": "npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/index.ts sync",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "NextRouter: Tokens",
+      "type": "shell",
+      "command": "npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/index.ts tokens",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "NextRouter: Handover",
+      "type": "shell",
+      "command": "npx tsx /Users/ramadhani.musthofa/Work/nextrouter/src/cli/index.ts handover copilot",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    }
+  ]
+}

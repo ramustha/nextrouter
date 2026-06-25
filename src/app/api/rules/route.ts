@@ -66,16 +66,15 @@ export async function POST(request: Request) {
   if (action === 'update') {
     // Save updated rules to database
     if (Array.isArray(rules)) {
-      for (const r of rules) {
-        db.rules.upsert({
-          id: r.id,
-          provider_id: r.provider_id,
-          filename: r.filename,
-          content: r.content,
-          last_updated_at: new Date().toISOString(),
-          hash: crypto.randomUUID()
-        });
-      }
+      const rulesToUpsert = rules.map(r => ({
+        id: r.id,
+        provider_id: r.provider_id,
+        filename: r.filename,
+        content: r.content,
+        last_updated_at: new Date().toISOString(),
+        hash: crypto.randomUUID()
+      }));
+      db.rules.upsertMany(rulesToUpsert);
       
       // Write back to provider files
       await pushRules(workspacePath);

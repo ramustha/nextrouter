@@ -52,6 +52,13 @@ export function triggerSystemNotification(
       exec(`notify-send "${escapedTitle}" "${escapedMessage}"`, (err) => {
         if (err) console.error('Failed to trigger Linux notification:', err);
       });
+    } else if (platform === 'win32') {
+      const escapedTitle = title.replace(/'/g, "''").replace(/"/g, '');
+      const escapedMessage = message.replace(/'/g, "''").replace(/"/g, '');
+      const psCommand = `[void] [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); $obj = New-Object System.Windows.Forms.NotifyIcon; $obj.Icon = [System.Drawing.SystemIcons]::Information; $obj.BalloonTipIcon = 'Info'; $obj.BalloonTipTitle = '${escapedTitle}'; $obj.BalloonTipText = '${escapedMessage}'; $obj.Visible = $True; $obj.ShowBalloonTip(5000); Start-Sleep -s 1; $obj.Dispose()`;
+      exec(`powershell -Command "${psCommand}"`, (err) => {
+        if (err) console.error('Failed to trigger Windows notification:', err);
+      });
     }
   }
 }

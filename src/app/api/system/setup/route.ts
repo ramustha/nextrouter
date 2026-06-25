@@ -56,21 +56,25 @@ export async function POST() {
     }
 
     // 3. Shell alias setup
-    try {
-      const aliasLine = `\n# NextRouter CLI Alias\nalias nextrouter="npx tsx ${cliPath}"\n`;
-      for (const rcFile of [path.join(home, '.zshrc'), path.join(home, '.bashrc')]) {
-        if (fs.existsSync(rcFile)) {
-          const content = fs.readFileSync(rcFile, 'utf8');
-          if (!content.includes('alias nextrouter=')) {
-            fs.appendFileSync(rcFile, aliasLine, 'utf8');
-            logs.push(`Shell alias added to ${path.basename(rcFile)}`);
-          } else {
-            logs.push(`Shell alias already present in ${path.basename(rcFile)}`);
+    if (os.platform() !== 'win32') {
+      try {
+        const aliasLine = `\n# NextRouter CLI Alias\nalias nextrouter="npx tsx ${cliPath}"\n`;
+        for (const rcFile of [path.join(home, '.zshrc'), path.join(home, '.bashrc')]) {
+          if (fs.existsSync(rcFile)) {
+            const content = fs.readFileSync(rcFile, 'utf8');
+            if (!content.includes('alias nextrouter=')) {
+              fs.appendFileSync(rcFile, aliasLine, 'utf8');
+              logs.push(`Shell alias added to ${path.basename(rcFile)}`);
+            } else {
+              logs.push(`Shell alias already present in ${path.basename(rcFile)}`);
+            }
           }
         }
+      } catch (shellErr: any) {
+        logs.push(`Error configuring shell alias: ${shellErr.message}`);
       }
-    } catch (shellErr: any) {
-      logs.push(`Error configuring shell alias: ${shellErr.message}`);
+    } else {
+      logs.push(`Windows detected: To set up a CLI alias, add this to your $PROFILE: Function nextrouter { npx tsx "${cliPath}" $args }`);
     }
 
     // 4. Rules & Skills Sync

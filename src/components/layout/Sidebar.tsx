@@ -34,9 +34,7 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: '📊' },
-    { name: 'Context Bridge', path: '/context', icon: '⚡' },
-    { name: 'Rules Manager', path: '/rules', icon: '⚙️' },
-    { name: 'Universal Skills', path: '/skills', icon: '🧩' },
+    { name: 'Rules & Skills', path: '/rules', icon: '⚙️' },
     { name: 'Onboarding Guide', path: '/walkthrough', icon: '📖' }
   ];
 

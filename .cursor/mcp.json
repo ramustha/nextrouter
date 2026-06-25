@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "nextrouter": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "/Users/ramadhani.musthofa/Work/nextrouter/src/cli/mcp.ts"
+      ]
+    }
+  }
+}

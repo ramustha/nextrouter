@@ -63,6 +63,7 @@ export const PROVIDER_PLUGINS: ProviderPlugin[] = [
     providerName: 'Claude Code',
     color: '#a78bfa',
     integrationFiles: [
+      path.join(process.cwd(), 'CLAUDE.md'),
       path.join(os.homedir(), '.claude', 'commands', 'nr-status.md'),
       path.join(os.homedir(), '.claude', 'commands', 'nr-sync.md'),
       path.join(os.homedir(), '.claude', 'commands', 'nr-handover.md'),

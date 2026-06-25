@@ -2,11 +2,15 @@ import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { getDatabase } from '../store/database';
-import { startWorkspaceWatcher } from '../watcher/index';
+import { startWorkspaceWatcher, isWatcherActive } from '../watcher/index';
 import { pullRules, pushRules } from '../engine/rules-sync';
+import { eventBus } from '../watcher/events';
 
 const PID_FILE = path.join(process.cwd(), 'data', 'daemon.pid');
 const LOG_FILE = path.join(process.cwd(), 'data', 'daemon.log');
+const HEALTH_FILE = path.join(process.cwd(), 'data', 'daemon-health.json');
+const MCP_PID_FILE = path.join(process.cwd(), 'data', 'mcp.pid');
+const MCP_LOG_FILE = path.join(process.cwd(), 'data', 'mcp.log');
 
 function log(message: string) {
   const timestamp = new Date().toISOString();
@@ -19,12 +23,22 @@ function log(message: string) {
   }
 }
 
+let cachedProcesses: string[] = [];
+let lastProcessesCheck = 0;
+
 /**
  * Checks if specific AI-related processes are running on macOS.
  */
 export function getActiveAIProcesses(): string[] {
+  const now = Date.now();
+  if (now - lastProcessesCheck < 10000 && cachedProcesses.length > 0) {
+    return cachedProcesses;
+  }
+
   try {
-    const output = execSync('ps -A -o comm', {
+    const isWin = process.platform === 'win32';
+    const cmd = isWin ? 'tasklist' : 'ps -A -o comm';
+    const output = execSync(cmd, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore']
     });
@@ -45,9 +59,11 @@ export function getActiveAIProcesses(): string[] {
       }
     }
     
+    cachedProcesses = active;
+    lastProcessesCheck = now;
     return active;
   } catch (e) {
-    return [];
+    return cachedProcesses; // Fallback to stale cache if it exists, otherwise empty
   }
 }
 
@@ -79,6 +95,69 @@ export async function runDaemonWorker(workspacePath: string) {
   log('Starting workspace file watcher...');
   const watcher = startWorkspaceWatcher(workspacePath);
 
+  // Health / Performance tracking setup
+  let lastCpuUsage = process.cpuUsage();
+  let lastCpuTime = Date.now();
+  let syncCount = 0;
+  let lastSyncAt: string | null = null;
+
+  // Listen to sync events
+  eventBus.on('event', (evt) => {
+    if (evt.type === 'sync_completed') {
+      syncCount++;
+      lastSyncAt = evt.timestamp || new Date().toISOString();
+      updateHealthFile();
+    }
+  });
+
+  function updateHealthFile() {
+    try {
+      const now = Date.now();
+      const cpuDiff = process.cpuUsage(lastCpuUsage);
+      const timeDiffMs = now - lastCpuTime;
+      const cpuPercent = timeDiffMs > 0 
+        ? ((cpuDiff.user + cpuDiff.system) / (timeDiffMs * 1000)) * 100 
+        : 0;
+
+      // Update CPU tracking markers
+      lastCpuUsage = process.cpuUsage();
+      lastCpuTime = now;
+
+      const mem = process.memoryUsage();
+      
+      let monitoredFilesCount = 0;
+      try {
+        const watched = watcher.getWatched();
+        for (const dir in watched) {
+          monitoredFilesCount += watched[dir].length;
+        }
+      } catch (e) {}
+
+      const healthData = {
+        pid: process.pid,
+        cpuUsage: Math.round(cpuPercent * 100) / 100,
+        memoryUsage: {
+          rss: Math.round((mem.rss / 1024 / 1024) * 100) / 100,
+          heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 100) / 100
+        },
+        uptime: Math.round(process.uptime()),
+        syncCount,
+        lastSyncAt,
+        watcherActive: isWatcherActive,
+        monitoredFilesCount,
+        activeAIProcesses: getActiveAIProcesses(),
+        timestamp: new Date().toISOString()
+      };
+
+      fs.writeFileSync(HEALTH_FILE, JSON.stringify(healthData, null, 2), 'utf8');
+    } catch (e) {
+      // ignore write errors
+    }
+  }
+
+  // Initial update
+  updateHealthFile();
+
   // Background monitor loop
   let lastActiveProcesses: string[] = [];
   
@@ -97,6 +176,8 @@ export async function runDaemonWorker(workspacePath: string) {
       }
       lastActiveProcesses = active;
     }
+
+    updateHealthFile();
   }, 5000);
 
   // Handle termination signals
@@ -107,6 +188,11 @@ export async function runDaemonWorker(workspacePath: string) {
     if (fs.existsSync(PID_FILE)) {
       try {
         fs.unlinkSync(PID_FILE);
+      } catch (e) {}
+    }
+    if (fs.existsSync(HEALTH_FILE)) {
+      try {
+        fs.unlinkSync(HEALTH_FILE);
       } catch (e) {}
     }
     log('Daemon stopped.');
@@ -138,7 +224,8 @@ export function startDaemonBackground(workspacePath: string) {
     {
       cwd: workspacePath,
       detached: true,
-      stdio: ['ignore', logStream, logStream]
+      stdio: ['ignore', logStream, logStream],
+      shell: process.platform === 'win32'
     }
   );
 
@@ -170,7 +257,11 @@ export function stopDaemon() {
 
   console.log(`Stopping NextRouter daemon (PID: ${pid})...`);
   try {
-    process.kill(pid, 'SIGTERM');
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
     console.log('✓ Daemon stopped successfully.');
   } catch (e: any) {
     console.error(`Failed to kill process ${pid}:`, e.message || e);
@@ -212,6 +303,69 @@ export function isDaemonRunning(): boolean {
       fs.unlinkSync(PID_FILE);
     } catch (err) {}
     return false;
+  }
+}
+
+export function isMcpServerRunning(): boolean {
+  if (!fs.existsSync(MCP_PID_FILE)) return false;
+  try {
+    const pid = parseInt(fs.readFileSync(MCP_PID_FILE, 'utf8').trim(), 10);
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    try {
+      fs.unlinkSync(MCP_PID_FILE);
+    } catch (err) {}
+    return false;
+  }
+}
+
+export function startMcpServerBackground(workspacePath: string) {
+  if (isMcpServerRunning()) return;
+
+  const dir = path.dirname(MCP_PID_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const logStream = fs.openSync(MCP_LOG_FILE, 'a');
+  
+  const child = spawn(
+    'npx',
+    ['tsx', 'src/cli/mcp.ts', '--sse', '--port', '3001'],
+    {
+      cwd: workspacePath,
+      detached: true,
+      stdio: ['ignore', logStream, logStream],
+      shell: process.platform === 'win32'
+    }
+  );
+
+  child.unref();
+
+  if (child.pid) {
+    fs.writeFileSync(MCP_PID_FILE, child.pid.toString(), 'utf8');
+  }
+}
+
+export function stopMcpServer() {
+  if (!isMcpServerRunning()) return;
+
+  try {
+    const pidStr = fs.readFileSync(MCP_PID_FILE, 'utf8').trim();
+    const pid = parseInt(pidStr, 10);
+    
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
+  } catch (e) {
+    console.error('Failed to stop MCP server:', e);
+  } finally {
+    try {
+      fs.unlinkSync(MCP_PID_FILE);
+    } catch (err) {}
   }
 }
 
