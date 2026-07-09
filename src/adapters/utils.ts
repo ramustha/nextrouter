@@ -281,4 +281,184 @@ export function findPlanFiles(workspacePath: string): PlanFile[] {
   return plans.sort((a, b) => b.mtime - a.mtime);
 }
 
+export function toImperative(verb: string): string {
+  const v = verb.toLowerCase();
+  const overrides: Record<string, string> = {
+    creat: 'create',
+    delet: 'delete',
+    updat: 'update',
+    writ: 'write',
+    improv: 'improve',
+    remov: 'remove',
+    mak: 'make',
+    us: 'use',
+    replac: 'replace',
+    compar: 'compare',
+    generat: 'generate',
+    migrat: 'migrate',
+    configur: 'configure',
+    resolv: 'resolve',
+    clos: 'close',
+    sav: 'save',
+    handl: 'handle',
+    tun: 'tune',
+    defin: 'define',
+    declar: 'declare',
+    analyz: 'analyze',
+    enabl: 'enable',
+    disabl: 'disable',
+    customiz: 'customize',
+    optimiz: 'optimize',
+    synchroniz: 'synchronize',
+    restor: 'restore',
+    prun: 'prune',
+    ignor: 'ignore',
+    initializ: 'initialize',
+    serializ: 'serialize',
+    validat: 'validate',
+    pars: 'parse',
+    merg: 'merge',
+    manag: 'manage',
+    chang: 'change',
+    execut: 'execute',
+    compil: 'compile',
+    collaps: 'collapse',
+    requir: 'require',
+    prepar: 'prepare',
+    releas: 'release',
+    hid: 'hide',
+    runn: 'run',
+    putt: 'put',
+    gett: 'get',
+    shipp: 'ship',
+    stopp: 'stop',
+    formatt: 'format',
+    committ: 'commit',
+    cutt: 'cut',
+    splitt: 'split',
+    sett: 'set',
+    mapp: 'map',
+    logg: 'log',
+    wrapp: 'wrap',
+    yiel: 'yield'
+  };
+
+  const mapped = overrides[v];
+  if (mapped) return mapped;
+
+  // Handle double consonant for single-syllable doubling:
+  // e.g. running -> runn -> run, committing -> committ -> commit
+  if (v.length > 3 && v[v.length - 1] === v[v.length - 2]) {
+    const doubleConsonants = ['n', 't', 'p', 'g', 'b', 'd'];
+    const lastChar = v[v.length - 1];
+    if (doubleConsonants.includes(lastChar)) {
+      return v.slice(0, -1);
+    }
+  }
+
+  // Fallback for verbs ending in typical silent-e stems
+  if (v.endsWith('at') || 
+      v.endsWith('iz') || 
+      v.endsWith('us') || 
+      v.endsWith('os') || 
+      v.endsWith('ac') || 
+      v.endsWith('uc') || 
+      v.endsWith('ov') || 
+      v.endsWith('ev') || 
+      v.endsWith('iv') || 
+      v.endsWith('ur') || 
+      v.endsWith('or') || 
+      v.endsWith('ut') ||
+      v.endsWith('il') ||
+      v.endsWith('al') ||
+      v.endsWith('ul') ||
+      v.endsWith('ol') ||
+      (/[bcdfghjklmnpqrstvwxyz]l$/.test(v) && !v.endsWith('ll'))) {
+    return v + 'e';
+  }
+
+  return v;
+}
+
+export function extractMeaningfulTitle(text: string): string {
+  if (!text) return '';
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return '';
+
+  // Filter out boilerplate lines first
+  const nonBoilerplateLines = lines.filter(line => {
+    if (line.startsWith('You are working in the') || 
+        line.startsWith('You are a') || 
+        line.startsWith('You are ') ||
+        line.includes('is a Next.js') || 
+        line.startsWith('**') ||
+        line.startsWith('#') ||
+        line.startsWith('```')) {
+      return false;
+    }
+    return true;
+  });
+
+  const processLines = nonBoilerplateLines.length > 0 ? nonBoilerplateLines : lines;
+  let rawTitle = '';
+
+  // 1. Look for explicit job/task/goal lines
+  for (const line of processLines) {
+    const jobMatch = line.match(/^(?:your\s+)?(?:job|task|goal)\s*:\s*(.*)/i);
+    if (jobMatch && jobMatch[1]) {
+      rawTitle = cleanTitle(jobMatch[1]);
+      break;
+    }
+  }
+
+  // 2. Look for verbIng lines (e.g. "You are fixing...") and convert to imperative (e.g. "Fix...")
+  if (!rawTitle) {
+    for (const line of processLines) {
+      const verbIngMatch = line.match(/^you\s+are\s+(\w+)ing\s+(.*)/i);
+      if (verbIngMatch) {
+        const verbStem = verbIngMatch[1];
+        const imperativeVerb = toImperative(verbStem);
+        const rest = verbIngMatch[2];
+        const capitalizedVerb = imperativeVerb.charAt(0).toUpperCase() + imperativeVerb.slice(1);
+        rawTitle = cleanTitle(`${capitalizedVerb} ${rest}`);
+        break;
+      }
+    }
+  }
+
+  // 3. Look for lines starting with action verbs or Task markers
+  if (!rawTitle) {
+    for (const line of processLines) {
+      if (line.match(/^(?:task\s+\d+|goal|instruction)\b/i)) {
+        rawTitle = cleanTitle(line);
+        break;
+      }
+      if (line.match(/^(?:rewrite|create|fix|add|implement|refactor|update|remove|delete|verify|check|test|improve)\b/i)) {
+        rawTitle = cleanTitle(line);
+        break;
+      }
+    }
+  }
+
+  // 4. Fallback: use first of processed lines
+  if (!rawTitle) {
+    rawTitle = cleanTitle(processLines[0]);
+  }
+
+  if (!rawTitle) return '';
+  return rawTitle.charAt(0).toUpperCase() + rawTitle.slice(1);
+}
+
+function cleanTitle(title: string): string {
+  let cleaned = title
+    .replace(/[*#_`]/g, '') // remove markdown backticks, stars, hashes
+    .replace(/^[-+*\s]+/, '') // remove bullet points
+    .trim();
+  
+  if (cleaned.length > 150) {
+    cleaned = cleaned.substring(0, 150) + '...';
+  }
+  return cleaned;
+}
+
 

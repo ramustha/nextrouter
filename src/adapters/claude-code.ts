@@ -1,5 +1,5 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket, Message } from './types';
-import { calculateRateLimits, findWorkspaceRoot } from './utils';
+import { calculateRateLimits, findWorkspaceRoot, extractMeaningfulTitle } from './utils';
 import { getDatabase } from '../store/database';
 import fs from 'fs';
 import path from 'path';
@@ -108,7 +108,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
         const dbSessions = db.sessions.all().filter(s => s.provider_id === 'claude-code');
         for (const s of dbSessions) {
           const mtimeMs = new Date(s.last_active_at).getTime();
-          const cacheKey = `sa-v1-${s.id}.jsonl-${mtimeMs}`;
+          const cacheKey = `sa-v3-${s.id}.jsonl-${mtimeMs}`;
           globalClaudeCache.set(cacheKey, {
             id: s.id,
             title: s.title,
@@ -209,7 +209,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
             const globalClaudeCache = (globalThis as any)._claudeSessionsCache || new Map<string, Session>();
             (globalThis as any)._claudeSessionsCache = globalClaudeCache;
 
-            const cacheKey = `sa-v1-${file}-${maxMtimeMs}`;
+            const cacheKey = `sa-v3-${file}-${maxMtimeMs}`;
             const cachedSession = globalClaudeCache.get(cacheKey);
             if (cachedSession) {
               sessions.push(cachedSession);
@@ -275,8 +275,10 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
                 tokenCount += tokens;
 
                 if (messages.length === 0 && role === 'user') {
-                  const baseTitle = text.split('\n')[0].substring(0, 50) + (text.length > 50 ? '...' : '');
-                  title = projectName ? `[${projectName}] ${baseTitle}` : baseTitle;
+                  const baseTitle = extractMeaningfulTitle(text);
+                  if (baseTitle) {
+                    title = projectName ? `[${projectName}] ${baseTitle}` : baseTitle;
+                  }
                 }
 
                 messages.push({
@@ -414,7 +416,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
               };
               const globalClaudeCache = (globalThis as any)._claudeSessionsCache;
               if (globalClaudeCache) {
-                const cacheKey = `sa-v1-${file}-${maxMtimeMs}`;
+                const cacheKey = `sa-v3-${file}-${maxMtimeMs}`;
                 globalClaudeCache.set(cacheKey, sessionObj);
               }
               sessions.push(sessionObj);

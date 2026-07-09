@@ -1,5 +1,5 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket, Message } from './types';
-import { calculateRateLimits, findWorkspaceRoot } from './utils';
+import { calculateRateLimits, findWorkspaceRoot, extractMeaningfulTitle } from './utils';
 import { getDatabase } from '../store/database';
 import fs from 'fs';
 import path from 'path';
@@ -384,7 +384,14 @@ export class CursorAdapter implements ProviderAdapter {
                 messages[i].timestamp = new Date(estTime).toISOString();
               }
 
-              const title = `[${workspaceName}] ${meta.name || 'Cursor Session'}`;
+              let displayTitle = '';
+              if (meta.name) {
+                displayTitle = meta.name;
+              } else if (messages.length > 0) {
+                displayTitle = extractMeaningfulTitle(messages[0].content);
+              }
+              if (!displayTitle) displayTitle = 'Cursor Session';
+              const title = `[${workspaceName}] ${displayTitle}`;
               const sessionObj: Session = {
                 id: uuid,
                 title,

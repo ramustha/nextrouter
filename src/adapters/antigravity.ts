@@ -1,5 +1,5 @@
 import { ProviderAdapter, RuleFile, Session, ContextMetrics, HandoverPacket, Message } from './types';
-import { calculateRateLimits, findWorkspaceRoot } from './utils';
+import { calculateRateLimits, findWorkspaceRoot, extractMeaningfulTitle } from './utils';
 import { getDatabase } from '../store/database';
 import fs from 'fs';
 import path from 'path';
@@ -178,8 +178,10 @@ export class AntigravityAdapter implements ProviderAdapter {
             if (step.type === 'USER_INPUT' && step.content) {
               const cleanedText = step.content.replace(/<USER_REQUEST>|<\/USER_REQUEST>/g, '').trim();
               if (messages.length === 0) {
-                // Set first user request as title (truncated)
-                title = cleanedText.split('\n')[0].substring(0, 50) + (cleanedText.length > 50 ? '...' : '');
+                const extracted = extractMeaningfulTitle(cleanedText);
+                if (extracted) {
+                  title = extracted;
+                }
               }
               const tokens = enc ? enc.encode(cleanedText).length : Math.ceil(cleanedText.split(/\s+/).length * 1.3);
               tokenCount += tokens;

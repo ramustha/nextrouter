@@ -968,7 +968,7 @@ export default function DashboardPage() {
                                       transition: 'var(--transition-smooth)',
                                       cursor: 'pointer'
                                     }} className="session-item-hover" onClick={() => handleOpenSessionDetails(session)}>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                           <span style={{
                                             padding: '1px 5px',
@@ -999,11 +999,25 @@ export default function DashboardPage() {
                                               }}
                                               title={`Saved ${session.savings.tokensSaved.toLocaleString()} tokens (${session.savings.percentSaved}% budget reduction) by context sharing`}
                                             >
-                                              ⚡ Saved $${session.savings.costSaved.toFixed(2)}
+                                              ⚡ Saved ${session.savings.costSaved.toFixed(2)}
                                             </span>
                                           )}
                                         </div>
-                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0, color: 'var(--text-main)' }}>{session.title}</h4>
+                                        <h4 
+                                          title={session.title}
+                                          style={{ 
+                                            fontSize: '0.9rem', 
+                                            fontWeight: 600, 
+                                            margin: 0, 
+                                            color: 'var(--text-main)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            width: '100%'
+                                          }}
+                                        >
+                                          {session.title}
+                                        </h4>
                                       </div>
                                       <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '1px' }}>
                                         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-main)' }}>{session.token_count.toLocaleString()}</span>
@@ -1521,7 +1535,10 @@ export default function DashboardPage() {
                     {selectedSession.status}
                   </span>
                 </div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+                <h2 
+                  title={selectedSession.title}
+                  style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}
+                >
                   {selectedSession.title}
                 </h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
