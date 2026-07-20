@@ -139,6 +139,17 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (selectedSession) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [selectedSession]);
+
   const formatRelativeTime = (
     dateInput: string | Date | number,
     fallbackFormat: 'date' | 'datetime' = 'date'
@@ -1467,7 +1478,8 @@ export default function DashboardPage() {
           justifyContent: 'center',
           zIndex: 1000,
           padding: '24px',
-          animation: 'fadeIn 0.2s ease-out'
+          animation: 'fadeIn 0.2s ease-out',
+          overscrollBehavior: 'contain'
         }} onClick={() => setSelectedSession(null)}>
           <div style={{
             width: '100%',
@@ -1480,7 +1492,8 @@ export default function DashboardPage() {
             boxShadow: 'var(--shadow-premium), var(--shadow-glow)',
             borderRadius: '20px',
             overflow: 'hidden',
-            animation: 'scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+            animation: 'scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            overscrollBehavior: 'contain'
           }} onClick={(e) => e.stopPropagation()}>
             
             {/* Modal Header */}

@@ -262,13 +262,21 @@ export function MarkdownRenderer({ content, height = '320px', style }: MarkdownR
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isFullscreen) {
         setIsFullscreen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isFullscreen]);
 
   const containerStyle: React.CSSProperties = isFullscreen
@@ -283,7 +291,8 @@ export function MarkdownRenderer({ content, height = '320px', style }: MarkdownR
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px'
+        gap: '12px',
+        overscrollBehavior: 'contain'
       }
     : {
         display: 'flex',
