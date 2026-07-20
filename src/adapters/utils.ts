@@ -281,7 +281,7 @@ export function findPlanFiles(workspacePath: string): PlanFile[] {
   return plans.sort((a, b) => b.mtime - a.mtime);
 }
 
-export function findSessionPlanFiles(session: Session | null | undefined, workspacePath: string): PlanFile[] {
+export function findSessionPlanFiles(session: any, workspacePath: string): PlanFile[] {
   const plans: PlanFile[] = [];
   const addedPaths = new Set<string>();
 
@@ -300,11 +300,16 @@ export function findSessionPlanFiles(session: Session | null | undefined, worksp
     } catch {}
   };
 
+  const sessionId = session?.id;
+  const messages = session?.messages || [];
+  const startedAt = session?.startedAt || session?.started_at;
+  const lastActiveAt = session?.lastActiveAt || session?.last_active_at;
+
   // 1. Session Brain Artifact Plans (Priority 1)
-  if (session && session.id) {
+  if (sessionId) {
     const brainDirs = [
-      path.join(os.homedir(), '.gemini', 'antigravity', 'brain', session.id),
-      path.join(os.homedir(), '.gemini', 'antigravity-ide', 'brain', session.id)
+      path.join(os.homedir(), '.gemini', 'antigravity', 'brain', sessionId),
+      path.join(os.homedir(), '.gemini', 'antigravity-ide', 'brain', sessionId)
     ];
 
     for (const brainDir of brainDirs) {
@@ -323,9 +328,10 @@ export function findSessionPlanFiles(session: Session | null | undefined, worksp
   }
 
   // 2. Scan Session Messages for Referenced Plan / Spec / Doc files (Priority 2)
-  if (session && session.messages && session.messages.length > 0) {
+  if (Array.isArray(messages) && messages.length > 0) {
     const fileRegex = /(?:file:\/\/\/|\b)([\w\-.\/]+\.(?:md|MD))\b/g;
-    for (const msg of session.messages) {
+    for (const msg of messages) {
+      if (!msg || !msg.content) continue;
       let match;
       fileRegex.lastIndex = 0;
       while ((match = fileRegex.exec(msg.content)) !== null) {
@@ -347,9 +353,9 @@ export function findSessionPlanFiles(session: Session | null | undefined, worksp
 
   // 3. Timeframe-Matched Workspace Plans (Priority 3)
   const allWorkspacePlans = findPlanFiles(workspacePath);
-  if (session && session.startedAt && session.lastActiveAt) {
-    const startMs = new Date(session.startedAt).getTime() - 15 * 60 * 1000;
-    const endMs = new Date(session.lastActiveAt).getTime() + 15 * 60 * 1000;
+  if (startedAt && lastActiveAt) {
+    const startMs = new Date(startedAt).getTime() - 15 * 60 * 1000;
+    const endMs = new Date(lastActiveAt).getTime() + 15 * 60 * 1000;
 
     for (const wp of allWorkspacePlans) {
       if (wp.mtime >= startMs && wp.mtime <= endMs) {

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getProviderMeta } from '@/config/providers';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 
 interface Provider {
   id: string;
@@ -1873,24 +1874,9 @@ export default function DashboardPage() {
                       </div>
 
                       {bridgeBriefingTab === 'briefing' ? (
-                        <textarea
-                          readOnly
-                          value={bridgeHandoverMarkdown}
-                          style={{
-                            width: '100%',
-                            minHeight: '280px',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            background: 'rgba(0, 0, 0, 0.25)',
-                            border: '1px solid var(--border-color)',
-                            color: 'var(--text-main)',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.8rem',
-                            lineHeight: '1.45',
-                            resize: 'none',
-                            outline: 'none',
-                            scrollbarWidth: 'thin'
-                          }}
+                        <MarkdownRenderer
+                          content={bridgeHandoverMarkdown}
+                          height="320px"
                         />
                       ) : (() => {
                         const originalTokens = selectedSession.token_count || 0;
@@ -2067,26 +2053,9 @@ export default function DashboardPage() {
                             {sessionDetails.plans[selectedPlanIdx]?.path.replace(/^\/Users\/[^\/]+/, '~')}
                           </div>
                         </div>
-                        <textarea
-                          readOnly
-                          value={sessionDetails.plans[selectedPlanIdx]?.content || ''}
-                          style={{
-                            flex: 1,
-                            width: '100%',
-                            height: '320px',
-                            minHeight: '260px',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            background: 'rgba(0, 0, 0, 0.25)',
-                            border: '1px solid var(--border-color)',
-                            color: 'var(--text-main)',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.78rem',
-                            lineHeight: '1.5',
-                            resize: 'none',
-                            outline: 'none',
-                            scrollbarWidth: 'thin'
-                          }}
+                        <MarkdownRenderer
+                          content={sessionDetails.plans[selectedPlanIdx]?.content || ''}
+                          height="320px"
                         />
                       </div>
                     </div>
