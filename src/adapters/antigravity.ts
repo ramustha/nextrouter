@@ -129,77 +129,81 @@ export class AntigravityAdapter implements ProviderAdapter {
           let sessionWorkspacePath = '';
 
           for (const line of lines) {
-            const step = JSON.parse(line);
-            
-            if (step.cwd && typeof step.cwd === 'string') {
-              sessionWorkspacePath = step.cwd;
-            } else if (step.workspaceUris && Array.isArray(step.workspaceUris) && step.workspaceUris.length > 0) {
-              const uri = step.workspaceUris[0];
-              if (uri.startsWith('file://')) {
-                sessionWorkspacePath = decodeURIComponent(uri.replace(/^file:\/\//, ''));
-              }
-            } else if (step.content && typeof step.content === 'string') {
-              const wsMatch = step.content.match(/"workspaceUris"\s*:\s*\[\s*"file:\/\/([^"]+)"/);
-              if (wsMatch) {
-                sessionWorkspacePath = decodeURIComponent(wsMatch[1]);
-              } else {
-                const homedir = os.homedir();
-                const escapedHomedir = homedir.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const regex = new RegExp('file://(' + escapedHomedir + '[^\\s\\n)"\'`]+)');
-                const fileMatch = step.content.match(regex);
-                if (fileMatch) {
-                  sessionWorkspacePath = decodeURIComponent(fileMatch[1]);
+            try {
+              const step = JSON.parse(line);
+              
+              if (step.cwd && typeof step.cwd === 'string') {
+                sessionWorkspacePath = step.cwd;
+              } else if (step.workspaceUris && Array.isArray(step.workspaceUris) && step.workspaceUris.length > 0) {
+                const uri = step.workspaceUris[0];
+                if (uri.startsWith('file://')) {
+                  sessionWorkspacePath = decodeURIComponent(uri.replace(/^file:\/\//, ''));
                 }
-              }
-            } else if (step.tool_calls && Array.isArray(step.tool_calls)) {
-              for (const call of step.tool_calls) {
-                if (call.args) {
-                  try {
-                    const args = typeof call.args === 'string' ? JSON.parse(call.args) : call.args;
-                    const pathVal = args.DirectoryPath || args.AbsolutePath || args.Cwd || args.cwd || '';
-                    if (pathVal && typeof pathVal === 'string') {
-                      const cleanPath = pathVal.replace(/^"|"$/g, '');
-                      if (cleanPath.startsWith('/')) {
-                        sessionWorkspacePath = cleanPath;
+              } else if (step.content && typeof step.content === 'string') {
+                const wsMatch = step.content.match(/"workspaceUris"\s*:\s*\[\s*"file:\/\/([^"]+)"/);
+                if (wsMatch) {
+                  sessionWorkspacePath = decodeURIComponent(wsMatch[1]);
+                } else {
+                  const homedir = os.homedir();
+                  const escapedHomedir = homedir.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                  const regex = new RegExp('file://(' + escapedHomedir + '[^\\s\\n)"\'`]+)');
+                  const fileMatch = step.content.match(regex);
+                  if (fileMatch) {
+                    sessionWorkspacePath = decodeURIComponent(fileMatch[1]);
+                  }
+                }
+              } else if (step.tool_calls && Array.isArray(step.tool_calls)) {
+                for (const call of step.tool_calls) {
+                  if (call.args) {
+                    try {
+                      const args = typeof call.args === 'string' ? JSON.parse(call.args) : call.args;
+                      const pathVal = args.DirectoryPath || args.AbsolutePath || args.Cwd || args.cwd || '';
+                      if (pathVal && typeof pathVal === 'string') {
+                        const cleanPath = pathVal.replace(/^"|"$/g, '');
+                        if (cleanPath.startsWith('/')) {
+                          sessionWorkspacePath = cleanPath;
+                        }
                       }
+                    } catch (e) {
+                      // Ignore JSON parse errors in args
                     }
-                  } catch (e) {
-                    // Ignore JSON parse errors in args
                   }
                 }
               }
-            }
 
-            if (step.created_at) {
-              lastActiveAt = step.created_at;
-              if (messages.length === 0) startedAt = step.created_at;
-            }
-
-            if (step.type === 'USER_INPUT' && step.content) {
-              const cleanedText = step.content.replace(/<USER_REQUEST>|<\/USER_REQUEST>/g, '').trim();
-              if (messages.length === 0) {
-                const extracted = extractMeaningfulTitle(cleanedText);
-                if (extracted) {
-                  title = extracted;
-                }
+              if (step.created_at) {
+                lastActiveAt = step.created_at;
+                if (messages.length === 0) startedAt = step.created_at;
               }
-              const tokens = enc ? enc.encode(cleanedText).length : Math.ceil(cleanedText.split(/\s+/).length * 1.3);
-              tokenCount += tokens;
-              messages.push({
-                role: 'user',
-                content: cleanedText,
-                timestamp: step.created_at,
-                tokens
-              });
-            } else if (step.type === 'PLANNER_RESPONSE' && step.content) {
-              const tokens = enc ? enc.encode(step.content).length : Math.ceil(step.content.split(/\s+/).length * 1.3);
-              tokenCount += tokens;
-              messages.push({
-                role: 'assistant',
-                content: step.content,
-                timestamp: step.created_at,
-                tokens
-              });
+
+              if (step.type === 'USER_INPUT' && step.content) {
+                const cleanedText = step.content.replace(/<USER_REQUEST>|<\/USER_REQUEST>/g, '').trim();
+                if (messages.length === 0) {
+                  const extracted = extractMeaningfulTitle(cleanedText);
+                  if (extracted) {
+                    title = extracted;
+                  }
+                }
+                const tokens = enc ? enc.encode(cleanedText).length : Math.ceil(cleanedText.split(/\s+/).length * 1.3);
+                tokenCount += tokens;
+                messages.push({
+                  role: 'user',
+                  content: cleanedText,
+                  timestamp: step.created_at,
+                  tokens
+                });
+              } else if (step.type === 'PLANNER_RESPONSE' && step.content) {
+                const tokens = enc ? enc.encode(step.content).length : Math.ceil(step.content.split(/\s+/).length * 1.3);
+                tokenCount += tokens;
+                messages.push({
+                  role: 'assistant',
+                  content: step.content,
+                  timestamp: step.created_at,
+                  tokens
+                });
+              }
+            } catch (err: any) {
+              console.warn(`[AntigravityAdapter] Warning: failed to parse log line in ${logPath}: ${err.message}`);
             }
           }
 

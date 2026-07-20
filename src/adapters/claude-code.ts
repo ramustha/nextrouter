@@ -226,67 +226,71 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
             let sessionWorkspacePath = '';
 
             for (const line of lines) {
-              const obj = JSON.parse(line);
-              
-              if (obj.cwd && typeof obj.cwd === 'string') {
-                sessionWorkspacePath = obj.cwd;
-              }
+              try {
+                const obj = JSON.parse(line);
+                
+                if (obj.cwd && typeof obj.cwd === 'string') {
+                  sessionWorkspacePath = obj.cwd;
+                }
 
-              if (obj.isMeta) continue;
+                if (obj.isMeta) continue;
 
-              const role = obj.type === 'user' || obj.type === 'assistant' 
-                ? obj.type 
-                : (obj.role || (obj.message && obj.message.role));
-              
-              let text = '';
-              const rawContent = obj.content || obj.text || (obj.message && obj.message.content);
-              if (typeof rawContent === 'string') {
-                text = rawContent;
-              } else if (Array.isArray(rawContent)) {
-                const textParts: string[] = [];
-                for (const part of rawContent) {
-                  if (part && typeof part === 'object') {
-                    if (part.type === 'text' && typeof part.text === 'string') {
-                      textParts.push(part.text);
+                const role = obj.type === 'user' || obj.type === 'assistant' 
+                  ? obj.type 
+                  : (obj.role || (obj.message && obj.message.role));
+                
+                let text = '';
+                const rawContent = obj.content || obj.text || (obj.message && obj.message.content);
+                if (typeof rawContent === 'string') {
+                  text = rawContent;
+                } else if (Array.isArray(rawContent)) {
+                  const textParts: string[] = [];
+                  for (const part of rawContent) {
+                    if (part && typeof part === 'object') {
+                      if (part.type === 'text' && typeof part.text === 'string') {
+                        textParts.push(part.text);
+                      }
                     }
                   }
-                }
-                text = textParts.join('');
-              }
-
-              if (text) {
-                // Filter out local terminal commands stdout/stderr and meta lines to keep chat tidy
-                const trimmed = text.trim();
-                if (trimmed.startsWith('<local-command-stdout>') || 
-                    trimmed.startsWith('<local-command-stderr>') || 
-                    trimmed.startsWith('<command-name>') ||
-                    trimmed.startsWith('<command-message>') ||
-                    trimmed.startsWith('<command-args>') ||
-                    trimmed.startsWith('<command-status>') ||
-                    trimmed.startsWith('<local-command-caveat>')) {
-                  continue;
+                  text = textParts.join('');
                 }
 
-                const time = obj.timestamp || obj.time || new Date().toISOString();
-                lastActiveAt = time;
-                if (messages.length === 0) startedAt = time;
-
-                const tokens = enc ? enc.encode(text).length : Math.ceil(text.split(/\s+/).length * 1.3);
-                tokenCount += tokens;
-
-                if (messages.length === 0 && role === 'user') {
-                  const baseTitle = extractMeaningfulTitle(text);
-                  if (baseTitle) {
-                    title = projectName ? `[${projectName}] ${baseTitle}` : baseTitle;
+                if (text) {
+                  // Filter out local terminal commands stdout/stderr and meta lines to keep chat tidy
+                  const trimmed = text.trim();
+                  if (trimmed.startsWith('<local-command-stdout>') || 
+                      trimmed.startsWith('<local-command-stderr>') || 
+                      trimmed.startsWith('<command-name>') ||
+                      trimmed.startsWith('<command-message>') ||
+                      trimmed.startsWith('<command-args>') ||
+                      trimmed.startsWith('<command-status>') ||
+                      trimmed.startsWith('<local-command-caveat>')) {
+                    continue;
                   }
-                }
 
-                messages.push({
-                  role: role === 'user' ? 'user' : 'assistant',
-                  content: text,
-                  timestamp: time,
-                  tokens
-                });
+                  const time = obj.timestamp || obj.time || new Date().toISOString();
+                  lastActiveAt = time;
+                  if (messages.length === 0) startedAt = time;
+
+                  const tokens = enc ? enc.encode(text).length : Math.ceil(text.split(/\s+/).length * 1.3);
+                  tokenCount += tokens;
+
+                  if (messages.length === 0 && role === 'user') {
+                    const baseTitle = extractMeaningfulTitle(text);
+                    if (baseTitle) {
+                      title = projectName ? `[${projectName}] ${baseTitle}` : baseTitle;
+                    }
+                  }
+
+                  messages.push({
+                    role: role === 'user' ? 'user' : 'assistant',
+                    content: text,
+                    timestamp: time,
+                    tokens
+                  });
+                }
+              } catch (err: any) {
+                console.warn(`[ClaudeCodeAdapter] Warning: failed to parse log line in ${sessionFilePath}: ${err.message}`);
               }
             }
 
