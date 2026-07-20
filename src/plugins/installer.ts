@@ -516,10 +516,32 @@ function copyAntigravityGlobalWorkflows(workspacePath: string, logs: string[]): 
     return;
   }
 
+  const geminiDir = path.join(os.homedir(), '.gemini');
   const targets = [
-    path.join(os.homedir(), '.gemini', 'config', 'workflows'),
-    path.join(os.homedir(), '.gemini', 'antigravity', 'global_workflows')
+    path.join(geminiDir, 'config', 'workflows')
   ];
+
+  try {
+    if (fs.existsSync(geminiDir)) {
+      const items = fs.readdirSync(geminiDir);
+      for (const item of items) {
+        if (item.startsWith('antigravity')) {
+          const fullPath = path.join(geminiDir, item);
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            targets.push(path.join(fullPath, 'global_workflows'));
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    logs.push(`Warning scanning .gemini directory: ${err.message}`);
+  }
+
+  // Fallback to default path if none were found
+  if (targets.length === 1) {
+    targets.push(path.join(geminiDir, 'antigravity', 'global_workflows'));
+  }
 
   try {
     const files = fs.readdirSync(sourceDir);
