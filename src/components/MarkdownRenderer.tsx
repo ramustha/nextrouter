@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface MarkdownRendererProps {
   content: string;
@@ -76,7 +76,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
     // Headings
     if (trimmed.startsWith('# ')) {
       elements.push(
-        <h1 key={`h1-${keyIndex++}`} style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-primary, #a855f7)', marginTop: '14px', marginBottom: '8px' }}>
+        <h1 key={`h1-${keyIndex++}`} style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary, #a855f7)', marginTop: '14px', marginBottom: '8px' }}>
           {parseInlineFormatting(trimmed.substring(2))}
         </h1>
       );
@@ -84,7 +84,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
     }
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <h2 key={`h2-${keyIndex++}`} style={{ fontSize: '1.05rem', fontWeight: 600, color: '#c084fc', marginTop: '12px', marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+        <h2 key={`h2-${keyIndex++}`} style={{ fontSize: '1.1rem', fontWeight: 600, color: '#c084fc', marginTop: '12px', marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
           {parseInlineFormatting(trimmed.substring(3))}
         </h2>
       );
@@ -92,7 +92,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
     }
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h3 key={`h3-${keyIndex++}`} style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e2e8f0', marginTop: '10px', marginBottom: '4px' }}>
+        <h3 key={`h3-${keyIndex++}`} style={{ fontSize: '0.98rem', fontWeight: 600, color: '#e2e8f0', marginTop: '10px', marginBottom: '4px' }}>
           {parseInlineFormatting(trimmed.substring(4))}
         </h3>
       );
@@ -100,7 +100,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
     }
     if (trimmed.startsWith('#### ')) {
       elements.push(
-        <h4 key={`h4-${keyIndex++}`} style={{ fontSize: '0.88rem', fontWeight: 600, color: '#cbd5e1', marginTop: '8px', marginBottom: '4px' }}>
+        <h4 key={`h4-${keyIndex++}`} style={{ fontSize: '0.9rem', fontWeight: 600, color: '#cbd5e1', marginTop: '8px', marginBottom: '4px' }}>
           {parseInlineFormatting(trimmed.substring(5))}
         </h4>
       );
@@ -141,7 +141,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
           alignItems: 'flex-start',
           gap: '8px',
           margin: '4px 0',
-          fontSize: '0.85rem',
+          fontSize: '0.88rem',
           color: isChecked ? 'var(--text-muted, #94a3b8)' : '#e2e8f0',
           textDecoration: isChecked ? 'line-through' : 'none'
         }}>
@@ -170,7 +170,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
     // Bullet lists: - or *
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       elements.push(
-        <div key={`list-${keyIndex++}`} style={{ display: 'flex', gap: '8px', margin: '3px 0 3px 8px', fontSize: '0.85rem', color: '#e2e8f0' }}>
+        <div key={`list-${keyIndex++}`} style={{ display: 'flex', gap: '8px', margin: '3px 0 3px 8px', fontSize: '0.88rem', color: '#e2e8f0' }}>
           <span style={{ color: 'var(--color-primary, #a855f7)' }}>•</span>
           <div>{parseInlineFormatting(trimmed.substring(2))}</div>
         </div>
@@ -180,7 +180,7 @@ export function renderMarkdownToJSX(content: string): React.ReactNode[] {
 
     // Default Paragraph
     elements.push(
-      <p key={`p-${keyIndex++}`} style={{ margin: '4px 0', fontSize: '0.85rem', lineHeight: '1.5', color: '#e2e8f0' }}>
+      <p key={`p-${keyIndex++}`} style={{ margin: '4px 0', fontSize: '0.88rem', lineHeight: '1.5', color: '#e2e8f0' }}>
         {parseInlineFormatting(trimmed)}
       </p>
     );
@@ -203,7 +203,7 @@ function parseInlineFormatting(text: string): React.ReactNode {
           padding: '1px 5px',
           borderRadius: '4px',
           fontFamily: 'var(--font-mono, monospace)',
-          fontSize: '0.78rem',
+          fontSize: '0.8rem',
           color: '#ec4899'
         }}>
           {part.substring(1, part.length - 1)}
@@ -259,50 +259,109 @@ function parseBoldItalic(text: string, keyPrefix: string): React.ReactNode {
 
 export function MarkdownRenderer({ content, height = '320px', style }: MarkdownRendererProps) {
   const [mode, setMode] = useState<'rendered' | 'raw'>('rendered');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  const containerStyle: React.CSSProperties = isFullscreen
+    ? {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 99999,
+        background: '#090d16',
+        padding: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
+      }
+    : {
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: '260px',
+        ...style
+      };
+
+  const viewportHeight = isFullscreen ? 'calc(100vh - 80px)' : (typeof height === 'number' ? `${height}px` : height);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '260px', ...style }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '6px' }}>
-        <button
-          onClick={() => setMode('rendered')}
-          style={{
-            padding: '3px 10px',
-            fontSize: '0.72rem',
-            borderRadius: '6px',
-            border: mode === 'rendered' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
-            background: mode === 'rendered' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: mode === 'rendered' ? 'var(--text-main)' : 'var(--text-muted)',
-            cursor: 'pointer',
-            fontWeight: mode === 'rendered' ? 600 : 400
-          }}
-        >
-          🎨 Rendered Preview
-        </button>
-        <button
-          onClick={() => setMode('raw')}
-          style={{
-            padding: '3px 10px',
-            fontSize: '0.72rem',
-            borderRadius: '6px',
-            border: mode === 'raw' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
-            background: mode === 'raw' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: mode === 'raw' ? 'var(--text-main)' : 'var(--text-muted)',
-            cursor: 'pointer',
-            fontWeight: mode === 'raw' ? 600 : 400
-          }}
-        >
-          📝 Raw Markdown
-        </button>
+    <div style={containerStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          {isFullscreen ? '📄 Document Preview (Fullscreen)' : ''}
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => setMode('rendered')}
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.74rem',
+              borderRadius: '6px',
+              border: mode === 'rendered' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
+              background: mode === 'rendered' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: mode === 'rendered' ? 'var(--text-main)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: mode === 'rendered' ? 600 : 400
+            }}
+          >
+            🎨 Rendered Preview
+          </button>
+          <button
+            onClick={() => setMode('raw')}
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.74rem',
+              borderRadius: '6px',
+              border: mode === 'raw' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)',
+              background: mode === 'raw' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: mode === 'raw' ? 'var(--text-main)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: mode === 'raw' ? 600 : 400
+            }}
+          >
+            📝 Raw Markdown
+          </button>
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Open Fullscreen Preview'}
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.74rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              background: isFullscreen ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: isFullscreen ? '#fca5a5' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            {isFullscreen ? '✕ Exit Fullscreen' : '⛶ Fullscreen'}
+          </button>
+        </div>
       </div>
 
       {mode === 'rendered' ? (
         <div style={{
           flex: 1,
           width: '100%',
-          height: typeof height === 'number' ? `${height}px` : height,
-          padding: '16px',
+          height: viewportHeight,
+          padding: '20px',
           borderRadius: '8px',
-          background: 'rgba(0, 0, 0, 0.25)',
+          background: 'rgba(0, 0, 0, 0.3)',
           border: '1px solid var(--border-color)',
           overflowY: 'auto',
           scrollbarWidth: 'thin'
@@ -316,17 +375,18 @@ export function MarkdownRenderer({ content, height = '320px', style }: MarkdownR
           style={{
             flex: 1,
             width: '100%',
-            height: typeof height === 'number' ? `${height}px` : height,
-            padding: '16px',
+            height: viewportHeight,
+            padding: '20px',
             borderRadius: '8px',
-            background: 'rgba(0, 0, 0, 0.25)',
+            background: 'rgba(0, 0, 0, 0.3)',
             border: '1px solid var(--border-color)',
             color: 'var(--text-main)',
             fontFamily: 'var(--font-mono)',
-            fontSize: '0.78rem',
+            fontSize: '0.8rem',
             lineHeight: '1.5',
             resize: 'none',
-            outline: 'none'
+            outline: 'none',
+            scrollbarWidth: 'thin'
           }}
         />
       )}
