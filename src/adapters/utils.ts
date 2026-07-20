@@ -281,6 +281,93 @@ export function findPlanFiles(workspacePath: string): PlanFile[] {
   return plans.sort((a, b) => b.mtime - a.mtime);
 }
 
+export function findSessionPlanFiles(session: Session | null | undefined, workspacePath: string): PlanFile[] {
+  const plans: PlanFile[] = [];
+  const addedPaths = new Set<string>();
+
+  const addPlan = (name: string, fullPath: string, mtime?: number) => {
+    if (!fs.existsSync(fullPath) || addedPaths.has(fullPath)) return;
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isFile()) {
+        addedPaths.add(fullPath);
+        plans.push({
+          name,
+          path: fullPath,
+          mtime: mtime || stat.mtimeMs
+        });
+      }
+    } catch {}
+  };
+
+  // 1. Session Brain Artifact Plans (Priority 1)
+  if (session && session.id) {
+    const brainDirs = [
+      path.join(os.homedir(), '.gemini', 'antigravity', 'brain', session.id),
+      path.join(os.homedir(), '.gemini', 'antigravity-ide', 'brain', session.id)
+    ];
+
+    for (const brainDir of brainDirs) {
+      if (fs.existsSync(brainDir)) {
+        try {
+          const files = fs.readdirSync(brainDir);
+          for (const f of files) {
+            if (f.endsWith('.md') && f !== '.DS_Store') {
+              const fullPath = path.join(brainDir, f);
+              addPlan(`[Session] ${f}`, fullPath);
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // 2. Scan Session Messages for Referenced Plan / Spec / Doc files (Priority 2)
+  if (session && session.messages && session.messages.length > 0) {
+    const fileRegex = /(?:file:\/\/\/|\b)([\w\-.\/]+\.(?:md|MD))\b/g;
+    for (const msg of session.messages) {
+      let match;
+      fileRegex.lastIndex = 0;
+      while ((match = fileRegex.exec(msg.content)) !== null) {
+        const refPath = match[1];
+        if (!refPath || refPath.includes('node_modules')) continue;
+        
+        let fullPath = refPath;
+        if (!path.isAbsolute(refPath) && workspacePath) {
+          fullPath = path.join(workspacePath, refPath);
+        }
+
+        if (fs.existsSync(fullPath)) {
+          const relName = workspacePath ? path.relative(workspacePath, fullPath) : path.basename(fullPath);
+          addPlan(relName, fullPath);
+        }
+      }
+    }
+  }
+
+  // 3. Timeframe-Matched Workspace Plans (Priority 3)
+  const allWorkspacePlans = findPlanFiles(workspacePath);
+  if (session && session.startedAt && session.lastActiveAt) {
+    const startMs = new Date(session.startedAt).getTime() - 15 * 60 * 1000;
+    const endMs = new Date(session.lastActiveAt).getTime() + 15 * 60 * 1000;
+
+    for (const wp of allWorkspacePlans) {
+      if (wp.mtime >= startMs && wp.mtime <= endMs) {
+        addPlan(wp.name, wp.path, wp.mtime);
+      }
+    }
+  }
+
+  // 4. Fallback: If no plans matched specific session criteria, include workspace plans
+  if (plans.length === 0) {
+    for (const wp of allWorkspacePlans) {
+      addPlan(wp.name, wp.path, wp.mtime);
+    }
+  }
+
+  return plans;
+}
+
 export function toImperative(verb: string): string {
   const v = verb.toLowerCase();
   const overrides: Record<string, string> = {

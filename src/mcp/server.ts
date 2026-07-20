@@ -348,14 +348,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_active_plan': {
-        const { workspacePath } = args as any;
+        const { workspacePath, sessionId } = args as any;
         const fs = await import('fs');
-        const { findPlanFiles } = await import('../adapters/utils');
+        const { findSessionPlanFiles, findPlanFiles } = await import('../adapters/utils');
+        const { getDatabase } = await import('../store/database');
         
-        const plans = findPlanFiles(workspacePath);
+        let session = null;
+        if (sessionId) {
+          try {
+            const db = getDatabase();
+            session = db.sessions.get(sessionId);
+          } catch {}
+        }
+
+        const plans = session 
+          ? findSessionPlanFiles(session, workspacePath || process.cwd())
+          : findPlanFiles(workspacePath || process.cwd());
+
         if (plans.length === 0) {
           return {
-            content: [{ type: 'text', text: 'No active plan file found in the workspace.' }]
+            content: [{ type: 'text', text: 'No active plan file found.' }]
           };
         }
         

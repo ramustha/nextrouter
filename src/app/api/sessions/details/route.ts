@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/store/database';
-import { calculateSessionSavings, findPlanFiles } from '@/adapters/utils';
+import { calculateSessionSavings, findPlanFiles, findSessionPlanFiles } from '@/adapters/utils';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -75,22 +75,20 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2. Active Plan files (scanned across active session workspace)
+    // 2. Session Plan & Spec files (detected per-session)
     const plansList: Array<{ name: string; path: string; content: string; mtime?: number }> = [];
 
-    if (sessionWorkspacePath && fs.existsSync(sessionWorkspacePath)) {
-      const detectedPlans = findPlanFiles(sessionWorkspacePath);
-      for (const dp of detectedPlans) {
-        try {
-          plansList.push({
-            name: dp.name,
-            path: dp.path,
-            content: fs.readFileSync(dp.path, 'utf8'),
-            mtime: dp.mtime
-          });
-        } catch (e) {
-          // Ignore error
-        }
+    const detectedPlans = findSessionPlanFiles(session, sessionWorkspacePath);
+    for (const dp of detectedPlans) {
+      try {
+        plansList.push({
+          name: dp.name,
+          path: dp.path,
+          content: fs.readFileSync(dp.path, 'utf8'),
+          mtime: dp.mtime
+        });
+      } catch (e) {
+        // Ignore error
       }
     }
 
@@ -112,15 +110,6 @@ export async function GET(request: Request) {
                 try {
                   preview = fs.readFileSync(fp, 'utf8');
                 } catch (e) {}
-                // If workspace plan was not found, fallback to local brain session plan
-                if (plansList.length === 0 && (f === 'implementation_plan.md' || f === 'plan.md' || f === 'task.md')) {
-                  plansList.push({
-                    name: f,
-                    path: fp,
-                    content: preview,
-                    mtime: stat.mtimeMs
-                  });
-                }
               }
               localArtifacts.push({
                 name: f,

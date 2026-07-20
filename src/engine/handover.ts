@@ -5,7 +5,7 @@ import { Session, HandoverPacket } from '../adapters/types';
 import { countTokens } from './tokenizer';
 import { getDatabase } from '../store/database';
 import { execSync } from 'child_process';
-import { findPlanFiles } from '../adapters/utils';
+import { findPlanFiles, findSessionPlanFiles } from '../adapters/utils';
 
 interface CachedHandover {
   packet: HandoverPacket;
@@ -38,13 +38,13 @@ function getGitContext(cwd?: string): { branch: string; status: string; diff: st
   }
 }
 
-function parseWorkspacePlan(workspacePath?: string): { completed: string[]; remaining: string[] } {
+function parseWorkspacePlan(workspacePath?: string, session?: Session): { completed: string[]; remaining: string[] } {
   const completed: string[] = [];
   const remaining: string[] = [];
   
   if (!workspacePath) return { completed, remaining };
   
-  const plans = findPlanFiles(workspacePath);
+  const plans = session ? findSessionPlanFiles(session, workspacePath) : findPlanFiles(workspacePath);
   
   for (const plan of plans) {
     try {
@@ -196,7 +196,7 @@ export function generateHandover(
   }
 
   // Fetch plan and tasks
-  const { completed: completedTasks, remaining: remainingTasks } = parseWorkspacePlan(session.workspacePath);
+  const { completed: completedTasks, remaining: remainingTasks } = parseWorkspacePlan(session.workspacePath, session);
   const activeSkills = getActiveSkills(session.workspacePath);
   const inferredTools = inferToolsUsed(session);
 
